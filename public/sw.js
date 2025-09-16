@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stock-app-cache-v2';
+const CACHE_NAME = 'stock-app-cache-v3';
 const CORE_ASSETS = ['/', '/index.html', '/styles.css', '/js/app.js'];
 
 self.addEventListener('install', (event) => {
@@ -11,17 +11,14 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
   );
+  self.clients.claim();
 });
 
-// Cache-first for core assets; network-first with cache fallback for API and Yahoo
+// Cache-first for core assets; network-first for same-origin API
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   const isCore = CORE_ASSETS.includes(url.pathname);
-  const isApi = url.protocol.startsWith('http') && (
-    url.hostname.includes('localhost') ||
-    url.hostname.includes('alphavantage') ||
-    url.hostname.includes('yahoo')
-  );
+  const isSameOrigin = url.origin === self.location.origin;
 
   if (isCore) {
     event.respondWith(
@@ -34,7 +31,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (isApi) {
+  // Only handle same-origin API paths; bypass cross-origin (avoids CORS/cache issues)
+  if (isSameOrigin && url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(event.request).then((resp) => {
         const copy = resp.clone();
