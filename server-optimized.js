@@ -18,17 +18,24 @@ const ALPHA_KEY = process.env.ALPHA_VANTAGE_KEY || '';
 const XAI_API_KEY = process.env.XAI_API_KEY || '';
 const XAI_API_BASE = (process.env.XAI_API_BASE || '').trim();
 const XAI_MODEL = (process.env.XAI_MODEL || '').trim();
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_URL = (process.env.REDIS_URL || '').trim();
 
 // Redis client setup
 let redisClient = null;
-try {
-  redisClient = createClient({ url: REDIS_URL });
-  redisClient.on('error', (err) => console.log('Redis Client Error', err));
-  redisClient.on('connect', () => console.log('Redis connected successfully'));
-  redisClient.connect();
-} catch (error) {
-  console.log('Redis not available, falling back to in-memory cache');
+if (REDIS_URL) {
+  try {
+    redisClient = createClient({ url: REDIS_URL });
+    redisClient.on('error', (err) => console.log('Redis Client Error', err));
+    redisClient.on('connect', () => console.log('Redis connected successfully'));
+    // Connect asynchronously; if it fails, in-memory cache will be used
+    redisClient.connect().catch(() => {
+      console.log('Redis connect failed; using in-memory cache');
+    });
+  } catch (error) {
+    console.log('Redis init failed; using in-memory cache');
+  }
+} else {
+  console.log('REDIS_URL not set; using in-memory cache');
 }
 
 // Fallback in-memory cache
