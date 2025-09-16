@@ -1,0 +1,17 @@
+1) 安裝 Node.js LTS (如未安裝) 後重開 PowerShell。
+
+2) 於專案資料夾執行：
+   npm install
+   npm start
+
+3) 確認 .env 檔 (ATT22978.env) 已包含：
+   ALPHA_VANTAGE_KEY=你的金鑰
+   PORT=3001
+
+4) 用瀏覽器開啟：
+   Predictor free v.4.html
+
+說明：
+- 前端改用後端代理呼叫 Alpha Vantage，避免金鑰暴露。
+- 可在頁面輸入 API Key 覆蓋後端金鑰（選擇性）。
+- 進階模型 (Jump/Heston/GARCH) 由本機 server.js 提供近似分位帶端點。

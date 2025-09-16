@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票預測模型 - 專業版</title>
+    <meta name="theme-color" content="#0a0e1a">
+    <link rel="manifest" href='data:application/manifest+json,{"short_name":"StockApp","name":"Stock Prediction App","icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png"}],"start_url":".","display":"standalone","theme_color":"#0a0e1a","background_color":"#0a0e1a"}'>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Navigation -->
+        <nav class="navbar">
+            <div class="nav-container">
+                <h1 class="nav-title">
+                    <i class="fas fa-chart-line"></i>
+                    股票預測模型
+                </h1>
+                <div id="tickerBar" class="ticker-bar" aria-live="polite"></div>
+                <div class="nav-tabs" role="tablist" aria-label="Main tabs">
+                    <button id="tab-predict" class="nav-tab active" data-tab="predict" role="tab" aria-controls="predict-tab" aria-selected="true" tabindex="0" data-i18n="nav.predict">
+                        <i class="fas fa-calculator"></i>
+                        預測
+                    </button>
+                    <button id="tab-dashboard" class="nav-tab" data-tab="dashboard" role="tab" aria-controls="dashboard-tab" aria-selected="false" tabindex="-1" data-i18n="nav.dashboard">
+                        <i class="fas fa-tachometer-alt"></i>
+                        Dashboard
+                    </button>
+                    <button id="tab-market" class="nav-tab" data-tab="market" role="tab" aria-controls="market-tab" aria-selected="false" tabindex="-1" data-i18n="nav.market">
+                        <i class="fas fa-newspaper"></i>
+                        市場預測
+                    </button>
+                    <button id="tab-settings" class="nav-tab" data-tab="settings" role="tab" aria-controls="settings-tab" aria-selected="false" tabindex="-1" data-i18n="nav.settings">
+                        <i class="fas fa-cog"></i>
+                        設置
+                    </button>
+                </div>
+                <div class="nav-actions">
+                    <button id="themeToggle" class="btn btn-secondary btn-sm" aria-label="Toggle theme" title="Toggle theme">
+                        <i class="fas fa-moon" aria-hidden="true"></i>
+                    </button>
+                    <button id="langToggle" class="btn btn-secondary btn-sm" aria-label="語言 Language" title="語言 Language">EN</button>
+                </div>
+            </div>
+        </nav>
+        <div id="offlineWarning" class="toast warning" style="position: sticky; top: 0; left: 0; right: 0; margin: 8px auto; display:none; z-index: 2000;">
+            <i class="fas fa-wifi"></i>
+            <span>離線模式：使用本地快取資料</span>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Prediction Tab -->
+            <div id="predict-tab" class="tab-content active" role="tabpanel" aria-labelledby="tab-predict" tabindex="0">
+                <div class="container">
+                    <div class="warning-banner">
+                        <div class="warning-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="warning-text">
+                            <strong>風險警告：</strong>本工具僅供學術研究和教育目的使用。所有預測均基於歷史數據的AI/隨機模擬，並非財務建議。市場有風險，投資需謹慎。
+                        </div>
+                    </div>
+
+                    <div class="grid-layout">
+                        <!-- Input Panel -->
+                        <div class="input-panel">
+                            <div class="panel-header">
+                                <h2 data-i18n="panel.inputs">輸入參數</h2>
+                            </div>
+                            <div id="formError" style="display:none;color:#ef4444;margin:0 0 8px 0;"></div>
+                            <div class="form-group">
+                                <label for="apiKey" data-i18n="label.apiKey">Alpha Vantage API 金鑰</label>
+                                <input type="text" id="apiKey" placeholder="留空則使用後端金鑰" aria-label="API Key" data-i18n-placeholder="placeholder.apiKey">
+                                <small class="help-text">生產環境請只在後端保存金鑰</small>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="market" data-i18n="label.market">市場</label>
+                                    <select id="market">
+                                        <option value="HK">香港 (.HK)</option>
+                                        <option value="US">美國 (e.g., AAPL)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="stockSymbol" data-i18n="label.symbol">股票代號</label>
+                                    <input type="text" id="stockSymbol" placeholder="HK: 0700.HK / US: AAPL" aria-label="Stock symbol" data-i18n-placeholder="placeholder.symbol">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="investmentAmount" data-i18n="label.amount">模擬投資金額</label>
+                                    <input type="number" id="investmentAmount" value="1000000" min="1" aria-label="Investment amount">
+                                </div>
+                                <div class="form-group">
+                                    <label for="horizon" data-i18n="label.horizon">預測時長</label>
+                                    <select id="horizon">
+                                        <option value="5">1 週 (~5 交易日)</option>
+                                        <option value="22">1 個月 (~22 交易日)</option>
+                                        <option value="66">3 個月 (~66 交易日)</option>
+                                        <option value="132">6 個月 (~132 交易日)</option>
+                                        <option value="252">1 年 (~252 交易日)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="paths" data-i18n="label.paths">蒙特卡洛路徑數</label>
+                                    <input type="number" id="paths" value="5000" min="500" max="20000" aria-label="Monte Carlo paths">
+                                </div>
+                                <div class="form-group">
+                                    <label for="riskTolerance" data-i18n="label.risk">風險容忍 (VaR 95% 佔資本%)</label>
+                                    <input type="range" id="riskTolerance" min="1" max="30" value="10">
+                                    <div class="range-value" id="riskToleranceValue">10%</div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="realtimeToggle" data-i18n="label.realtime">實時更新</label>
+                                    <input type="checkbox" id="realtimeToggle">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="modelKind" data-i18n="label.model">模型</label>
+                                <select id="modelKind">
+                                    <option value="GBM">GBM（基準）</option>
+                                    <option value="JUMP">Jump Diffusion（高級）</option>
+                                    <option value="HESTON">Heston 隨機波動率（高級）</option>
+                                    <option value="GARCH">GARCH(1,1) 隨機波動率（高級）</option>
+                                    <option value="TRANSFORMER">Transformer（深度學習）</option>
+                                    <option value="PROPHET">Prophet（時間序列）</option>
+                                    <option value="ENSEMBLE">Ensemble（加權融合）</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="portfolioSymbols" data-i18n="label.portfolio">組合股票（逗號分隔，例如：AAPL,MSFT,AMZN）</label>
+                                <input type="text" id="portfolioSymbols" placeholder="AAPL,MSFT" aria-label="Portfolio symbols" data-i18n-placeholder="placeholder.portfolio">
+                                <small class="help-text">填寫兩隻或以上股票以計算Markowitz最優權重</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="alertPrice" data-i18n="label.alert">價格警報（當前價高於此值時通知）</label>
+                                <input type="number" id="alertPrice" placeholder="例如：150.00" min="0" step="0.01" aria-label="Alert price" data-i18n-placeholder="placeholder.alert">
+                            </div>
+
+                            <button id="predictBtn" class="btn btn-primary" aria-label="Run AI prediction" data-i18n="btn.predict">
+                                <i class="fas fa-rocket"></i>
+                                <span class="btn-text">運行 AI 多路徑預測</span>
+                                <div class="btn-spinner" style="display: none;"></div>
+                            </button>
+                        </div>
+
+                        <!-- Results Panel -->
+                        <div class="results-panel">
+                            <div class="panel-header">
+                                <h2 data-i18n="panel.core">核心結果</h2>
+                                <div class="help-text">Real Yahoo data sync · Enhanced LSTM with Transformer attention · Added GARCH for dynamic volatility · Dynamic X sentiment integration · Added backtest for model validation · Added price alert with notifications · Added real-time updates with interval/WS · Added news integration from browse_page · Added Kelly Criterion for position sizing · Added scenario analysis with stress tests · Added CSV/Excel export for data · Added historical chart with candlestick and volume · Added login and cloud history with Firebase · Added A/B testing for model comparison · Added PWA for mobile/offline use · Optimized for Vercel/Netlify deployment with CDN</div>
+                            </div>
+                            
+                            <div class="kpi-grid">
+                                <div class="kpi-item">
+                                    <div class="kpi-label">當前價</div>
+                                    <div class="kpi-value" id="kpiPrice">-</div>
+                                </div>
+                                <div class="kpi-item">
+                                    <div class="kpi-label">實時報價</div>
+                                    <div class="kpi-value" id="realTimeQuote">-</div>
+                                </div>
+                                <div class="kpi-item">
+                                    <div class="kpi-label">綜合預測價</div>
+                                    <div class="kpi-value" id="kpiForecast">-</div>
+                                </div>
+                                <div class="kpi-item">
+                                    <div class="kpi-label">上漲概率</div>
+                                    <div class="kpi-value" id="kpiProb">-</div>
+                                </div>
+                                <div class="kpi-item">
+                                    <div class="kpi-label">建議倉位</div>
+                                    <div class="kpi-value" id="kpiAlloc">-</div>
+                                </div>
+                            </div>
+
+                            <div id="result" class="result-content"></div>
+                            
+                            <button id="downloadBtn" class="btn btn-success" style="display: none;">
+                                <i class="fas fa-download"></i>
+                                下載報告 (PDF)
+                            </button>
+                            <button id="exportBtn" class="btn" style="display: none; background:#ffc107; color:#111; margin-left:8px;">Export CSV</button>
+                            <button id="exportExcelBtn" class="btn" style="display: none; background:#16a34a; color:#fff; margin-left:8px;">Export Excel</button>
+                            <button id="debugBtn" class="btn btn-secondary" style="display:none; margin-left:8px;">Debug Data</button>
+                            <div class="panel-section" style="margin-top:16px;">
+                                <h3 style="margin: 0 0 8px 0;">Grok AI 分析</h3>
+                                <textarea id="grokPrompt" rows="3" placeholder="輸入要讓 Grok 分析的內容，例如：請分析AAPL最近三個月走勢與風險點" style="width:100%; resize: vertical;"></textarea>
+                                <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+                                    <button id="grokBtn" class="btn btn-primary">
+                                        <i class="fas fa-robot"></i>
+                                        送出給 Grok
+                                    </button>
+                                    <small class="help-text">伺服器需已設定 XAI_API_KEY</small>
+                                </div>
+                                <pre id="grokOutput" class="code" style="white-space: pre-wrap; margin-top:8px; background:#0f172a; color:#e2e8f0; padding:8px; border-radius:6px; max-height:200px; overflow:auto;"></pre>
+                                <h4 style="margin: 12px 0 6px 0;">Grok AI 自動分析</h4>
+                                <pre id="grokAutoOutput" class="code" style="white-space: pre-wrap; margin-top:4px; background:#0b1220; color:#e2e8f0; padding:8px; border-radius:6px; max-height:200px; overflow:auto;"></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Section -->
+                    <div class="charts-section">
+                        <div class="chart-container">
+                            <h3 data-i18n="chart.price">價格預測圖表</h3>
+                            <canvas id="stockChart"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <h3 data-i18n="chart.risk">風險分佈</h3>
+                            <canvas id="riskChart"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <h3 data-i18n="chart.dd">歷史回撤</h3>
+                            <canvas id="ddChart"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <h3 data-i18n="chart.hist">歷史K線 + 交易量</h3>
+                            <canvas id="historicalChart" style="display: none;"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Tab -->
+            <div id="dashboard-tab" class="tab-content" role="tabpanel" aria-labelledby="tab-dashboard" tabindex="0">
+                <div class="container">
+                    <div class="dashboard-header">
+                        <h2 data-i18n="panel.dashboard">Dashboard</h2>
+                        <div class="dashboard-actions">
+                            <button id="btnRefreshHistory" class="btn btn-secondary" data-i18n="btn.refresh">
+                                <i class="fas fa-sync-alt"></i>
+                                刷新
+                            </button>
+                            <button id="btnClearHistory" class="btn btn-danger" data-i18n="btn.clear">
+                                <i class="fas fa-trash"></i>
+                                清空
+                            </button>
+                        </div>
+                    </div>
+                    <div id="historyList" class="history-content">—</div>
+                    <div class="dashboard-section">
+                        <h3 data-i18n="panel.backtest">Backtest Results</h3>
+                        <table>
+                            <thead>
+                                <tr><th>Model</th><th>MAE</th><th>RMSE</th></tr>
+                            </thead>
+                            <tbody id="backtestTable">
+                                <tr><td>—</td><td>—</td><td>—</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Market Insights Tab -->
+            <div id="market-tab" class="tab-content" role="tabpanel" aria-labelledby="tab-market" tabindex="0">
+                <div class="container">
+                    <div class="dashboard-header">
+                        <h2 data-i18n="panel.market">市場預測</h2>
+                        <div class="dashboard-actions">
+                            <button id="btnRefreshMarket" class="btn btn-secondary" data-i18n="btn.update">
+                                <i class="fas fa-sync-alt"></i>
+                                更新
+                            </button>
+                        </div>
+                    </div>
+                    <div id="marketDashboard" class="history-content">—</div>
+                </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div id="settings-tab" class="tab-content" role="tabpanel" aria-labelledby="tab-settings" tabindex="0">
+                <div class="container">
+                    <h2 data-i18n="panel.settings">系統設置</h2>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label for="apiEndpoint">API 端點</label>
+                            <input type="text" id="apiEndpoint" value="http://localhost:3001/api/alphavantage">
+                        </div>
+                        <div class="setting-item">
+                            <label for="defaultPaths">預設路徑數</label>
+                            <input type="number" id="defaultPaths" value="5000" min="500" max="20000">
+                        </div>
+                        <div class="setting-item">
+                            <label for="autoRefresh">自動刷新監控</label>
+                            <input type="checkbox" id="autoRefresh" checked>
+                        </div>
+                        <div class="setting-item">
+                            <label>登入</label>
+                            <div>
+                                <input type="email" id="loginEmail" placeholder="Email">
+                                <input type="password" id="loginPassword" placeholder="Password">
+                                <button id="loginBtn" class="btn btn-secondary">Login</button>
+                                <div id="loginStatus" class="help-text">未登入（Guest）</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Monitor Section -->
+        <div class="monitor-section">
+            <div class="container">
+                <h3>實時監控</h3>
+                <div id="monitor" class="monitor-content">—</div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div id="toast" class="toast" role="status" aria-live="assertive"></div>
+
+        <!-- Loading Overlay -->
+        <div id="loading" class="loading-overlay" aria-hidden="true" hidden>
+            <div class="loading-spinner" role="status" aria-live="polite" aria-label="Loading"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prophetjs@1.1.2/dist/prophet.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/idb@7/build/iife/index-min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/finnhub-js@1.2.14/dist/finnhub.min.js"></script>
+    <!-- Optional libs disabled for file:// to reduce console noise -->
+    <!-- <script src="https://js.pusher.com/8.4/pusher.min.js"></script> -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@3.3.0/dist/chartjs-chart-financial.min.js"></script>
+    <!-- <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script> -->
+    <!-- <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script> -->
+    <script src="js/app.js"></script>
+</body>
+</html>
