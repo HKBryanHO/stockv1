@@ -15,6 +15,84 @@ const ALPHA_KEY = process.env.ALPHA_VANTAGE_KEY || '';
 const XAI_API_KEY = process.env.XAI_API_KEY || '';
 const XAI_API_BASE = (process.env.XAI_API_BASE || '').trim();
 const XAI_MODEL = (process.env.XAI_MODEL || '').trim();
+const XAI_FALLBACK_API_BASE = (process.env.XAI_FALLBACK_API_BASE || '').trim();
+const XAI_FALLBACK_MODEL = (process.env.XAI_FALLBACK_MODEL || '').trim();
+
+// Grok ops helpers: rate limit, coalescing, telemetry, safety
+const RL_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
+const RL_MAX = Number(process.env.RATE_LIMIT_MAX_REQUESTS || 100);
+const rateMap = new Map(); // key -> { windowStart, count }
+const grokPending = new Map(); // key -> Promise
+const metrics = { routes: {}, startedAt: new Date().toISOString() };
+// Prompt templates in-memory admin
+let promptTemplates = {
+  versions: {
+    v1: { analyst: 'You are a helpful financial analysis assistant.', risk: 'Focus on risks and mitigations.', news: 'Summarize headlines into TL;DR with risks and catalysts.', screener: 'Transform NL request into stock filters and return candidates.' }
+  },
+  active: 'v1',
+  ab: { v1: 100 }
+};
+
+function recordMetric(route, ms, ok) {
+  const r = metrics.routes[route] || (metrics.routes[route] = { requests: 0, errors: 0, avgMs: 0 });
+  r.requests += 1;
+  if (!ok) r.errors += 1;
+  // incremental average
+  r.avgMs = r.avgMs + (ms - r.avgMs) / r.requests;
+}
+
+function rateLimitOk(ip, route) {
+  const key = `${ip || 'unknown'}|${route}`;
+  const now = Date.now();
+  let rec = rateMap.get(key);
+  if (!rec || (now - rec.windowStart) > RL_WINDOW_MS) {
+    rec = { windowStart: now, count: 0 };
+  }
+  rec.count += 1;
+  rateMap.set(key, rec);
+  return rec.count <= RL_MAX;
+}
+
+function containsUnsafe(text) {
+  if (!text) return false;
+  const t = (text + '').toLowerCase();
+  const banned = ['jailbreak','ignore previous','disregard previous','system prompt','prompt injection'];
+  return banned.some(w => t.includes(w));
+}
+
+function sanitizeMessages(messages) {
+  if (!Array.isArray(messages)) return messages;
+  return messages.map(m => {
+    if (m && typeof m.content === 'string' && containsUnsafe(m.content)) {
+      return { ...m, content: 'User content removed due to safety policy.' };
+    }
+    return m;
+  });
+}
+
+app.get('/api/metrics', (req, res) => {
+  res.json(metrics);
+});
+
+// Templates admin endpoints
+app.get('/api/grok/templates', (req, res) => {
+  res.json(promptTemplates);
+});
+
+app.put('/api/grok/templates', (req, res) => {
+  try {
+    const body = req.body || {};
+    if (body && typeof body === 'object') {
+      if (body.versions) promptTemplates.versions = body.versions;
+      if (body.active) promptTemplates.active = body.active;
+      if (body.ab) promptTemplates.ab = body.ab;
+      return res.json({ ok: true, templates: promptTemplates });
+    }
+    return res.status(400).json({ error: 'invalid_body' });
+  } catch (e) {
+    return res.status(500).json({ error: e && e.message ? e.message : 'templates_error' });
+  }
+});
 
 // Simple in-memory cache and coalescing
 const cache = new Map(); // key -> { ts, status, body }
@@ -156,49 +234,49 @@ app.get('/api/market/insights', async (req, res) => {
       ? symbolsParam.split(',').map((s) => s.trim()).filter(Boolean)
       : ['NVDA','PLTR','MSFT','GOOGL','9988.HK','0700.HK','AVGO','AMD','IONQ','LLY','ABBV'];
 
-    const series = {};
-
-    const tsPromises = symbols.map(async (sym) => {
-      // Alpha Vantage daily series (cached by proxy logic)
-      const p = new URLSearchParams({ function: 'TIME_SERIES_DAILY', symbol: sym, outputsize: 'compact', apikey: ALPHA_KEY });
-      const url = `https://www.alphavantage.co/query?${p.toString()}`;
-      const { body } = await fetchAlphaJson(url);
+    const fetchChartYahoo = async (symbol) => {
+      const u1 = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=6mo&interval=1d&events=history&includeAdjustedClose=true`;
+      let { status, body } = await tryFetchWithFallback(u1);
+      if (status !== 200 || !body) {
+        const u2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=6mo&interval=1d&events=history&includeAdjustedClose=true`;
+        const r2 = await tryFetchWithFallback(u2);
+        status = r2.status; body = r2.body;
+      }
+      if (status !== 200 || !body) return { ok: false };
       const j = JSON.parse(body);
-      const ts = j && j['Time Series (Daily)'];
-      if (!ts) return { sym, ok: false };
-      const dates = Object.keys(ts).sort();
-      const closes = dates.map((d) => parseFloat(ts[d]['4. close']));
-      const volumes = dates.map((d) => parseFloat(ts[d]['5. volume'] || '0'));
-      return { sym, ok: true, dates, closes, volumes };
-    });
+      const r = j && j.chart && j.chart.result && j.chart.result[0];
+      if (!r) return { ok: false };
+      const timestamps = r.timestamp || [];
+      const quote = r.indicators && r.indicators.quote && r.indicators.quote[0] || {};
+      const closes = (quote.close || []).map((v) => Number(v));
+      const volumes = (quote.volume || []).map((v) => Number(v || 0));
+      const dates = timestamps.map((t) => new Date(t * 1000).toISOString().slice(0,10));
+      return { ok: true, dates, closes, volumes };
+    };
 
-    const yqPromises = symbols.map(async (sym) => {
-      const yurl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+    const fetchQuoteYahoo = async (symbol) => {
+      const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`;
       try {
-        const { body } = await fetchJson(yurl);
+        const { body } = await fetchJson(url);
         const j = JSON.parse(body);
         const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
         const price = r ? (r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice) : undefined;
-        return { sym, price: Number(price) };
+        return isFinite(price) ? Number(price) : NaN;
       } catch {
-        return { sym, price: NaN };
+        return NaN;
       }
-    });
+    };
 
-    const [tsResults, yqResults] = await Promise.all([
-      Promise.all(tsPromises),
-      Promise.all(yqPromises)
-    ]);
-
-    const priceMap = new Map(yqResults.map((x) => [x.sym, x.price]));
-
-    tsResults.forEach((r) => {
-      if (!r.ok) return;
-      const lp = priceMap.get(r.sym);
-      if (isFinite(lp)) {
-        r.closes[r.closes.length - 1] = Number(lp);
-      }
-      series[r.sym] = { dates: r.dates, closes: r.closes, volumes: r.volumes };
+    const series = {};
+    const charts = await Promise.all(symbols.map((s) => fetchChartYahoo(s)));
+    const quotes = await Promise.all(symbols.map((s) => fetchQuoteYahoo(s)));
+    symbols.forEach((sym, idx) => {
+      const ch = charts[idx];
+      if (!ch || !ch.ok) return;
+      const closes = ch.closes.slice();
+      const lp = quotes[idx];
+      if (isFinite(lp) && closes.length) closes[closes.length - 1] = lp;
+      series[sym] = { dates: ch.dates, closes, volumes: ch.volumes };
     });
 
     return res.json({ symbols, series, updatedAt: new Date().toISOString() });
@@ -311,9 +389,19 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
+// xAI Grok config (model/base) for frontend awareness
+app.get('/api/grok/config', (req, res) => {
+  res.json({
+    model: XAI_MODEL || 'grok-2-latest',
+    base: XAI_API_BASE || 'https://api.x.ai/v1/chat/completions'
+  });
+});
+
 // xAI Grok chat proxy (secure backend only)
 app.post('/api/grok/chat', async (req, res) => {
   try {
+    const start = Date.now();
+    if (!rateLimitOk(req.ip, '/api/grok/chat')) return res.status(429).json({ error: 'rate_limited' });
     // Allow per-request API key via header or body
     const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
     const apiKeyToUse = providedKey || XAI_API_KEY;
@@ -323,7 +411,7 @@ app.post('/api/grok/chat', async (req, res) => {
 
     // Basic input shape: { messages: [{role, content}], model?, stream? }
     const body = req.body || {};
-    const messages = Array.isArray(body.messages) ? body.messages : [];
+    const messages = sanitizeMessages(Array.isArray(body.messages) ? body.messages : []);
     const model = (body.model || XAI_MODEL || 'grok-2-latest').toString();
     const stream = Boolean(body.stream);
 
@@ -350,7 +438,14 @@ app.post('/api/grok/chat', async (req, res) => {
       }
     };
 
-    const forward = await new Promise((resolve, reject) => {
+    const coalesceKey = `chat:${model}:${JSON.stringify(messages)}`;
+    if (grokPending.has(coalesceKey)) {
+      const result = await grokPending.get(coalesceKey);
+      res.setHeader('Content-Type', result.headers['content-type'] || 'application/json');
+      recordMetric('/api/grok/chat', Date.now() - start, result.status >= 200 && result.status < 400);
+      return res.status(result.status).send(result.body);
+    }
+    const p = new Promise((resolve, reject) => {
       const req2 = lib.request(options, (r) => {
         let data = '';
         r.on('data', (chunk) => (data += chunk));
@@ -359,12 +454,142 @@ app.post('/api/grok/chat', async (req, res) => {
       req2.on('error', reject);
       req2.write(requestPayload);
       req2.end();
-    });
+    }).finally(() => grokPending.delete(coalesceKey));
+    grokPending.set(coalesceKey, p);
+    const forward = await p;
 
     res.setHeader('Content-Type', forward.headers['content-type'] || 'application/json');
+    recordMetric('/api/grok/chat', Date.now() - start, forward.status >= 200 && forward.status < 400);
+    if (forward.status >= 500 && XAI_FALLBACK_API_BASE) {
+      try {
+        const fbUrl = new URL(XAI_FALLBACK_API_BASE);
+        const fbOptions = { ...options, hostname: fbUrl.hostname, port: fbUrl.port || 443, path: fbUrl.pathname + (fbUrl.search || '') };
+        const fbBody = JSON.stringify({ ...JSON.parse(requestPayload), model: (XAI_FALLBACK_MODEL || model) });
+        const fb = await new Promise((resolve, reject) => {
+          const rq = (fbUrl.protocol === 'https:' ? https : http).request(fbOptions, (r) => { let d=''; r.on('data', c=>d+=c); r.on('end', ()=> resolve({ status:r.statusCode||500, body:d, headers:r.headers })); });
+          rq.on('error', reject); rq.write(fbBody); rq.end();
+        });
+        res.setHeader('Content-Type', fb.headers['content-type'] || 'application/json');
+        return res.status(fb.status).send(fb.body);
+      } catch (_) {}
+    }
     return res.status(forward.status).send(forward.body);
   } catch (e) {
     return res.status(500).json({ error: e && e.message ? e.message : 'grok_proxy_error' });
+  }
+});
+
+// xAI Grok streaming endpoint (SSE): transforms provider stream into plain text tokens
+app.post('/api/grok/stream', async (req, res) => {
+  try {
+    if (!rateLimitOk(req.ip, '/api/grok/stream')) { res.status(429); res.write('event: error\n'); res.write('data: rate_limited\n\n'); return res.end(); }
+    const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
+    const apiKeyToUse = providedKey || XAI_API_KEY;
+    if (!apiKeyToUse) {
+      return res.status(400).json({ error: 'Missing xAI API key. Provide header x-xai-api-key or body.apiKey.' });
+    }
+
+    const body = req.body || {};
+    const messages = sanitizeMessages(Array.isArray(body.messages) ? body.messages : []);
+    const model = (body.model || XAI_MODEL || 'grok-2-latest').toString();
+
+    // Prepare SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+
+    const baseUrl = XAI_API_BASE || 'https://api.x.ai/v1/chat/completions';
+    const urlObj = new URL(baseUrl);
+    const isHttps = urlObj.protocol === 'https:';
+    const lib = isHttps ? https : http;
+
+    const options = {
+      method: 'POST',
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname + (urlObj.search || ''),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKeyToUse}`,
+        'Accept': 'text/event-stream'
+      }
+    };
+
+    const requestPayload = JSON.stringify({ model, messages, stream: true });
+
+    const upstream = lib.request(options, (r) => {
+      let buffer = '';
+      r.on('data', (chunk) => {
+        try {
+          buffer += chunk.toString('utf8');
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop() || '';
+          for (const part of parts) {
+            const line = part.trim();
+            if (!line) continue;
+            // Expect OpenAI-style SSE: "data: {json}" or "data: [DONE]"
+            const dataPrefix = 'data:';
+            if (line.startsWith(dataPrefix)) {
+              const payload = line.slice(dataPrefix.length).trim();
+              if (payload === '[DONE]') {
+                res.write('event: done\n');
+                res.write('data: [DONE]\n\n');
+                res.end();
+                return;
+              }
+              try {
+                const j = JSON.parse(payload);
+                const delta = j?.choices?.[0]?.delta?.content || '';
+                if (delta) {
+                  // Emit plain token text so the client can append directly
+                  const safe = delta.replace(/\r?\n/g, '\\n');
+                  res.write(`data: ${safe}\n\n`);
+                }
+              } catch {
+                // If JSON parse fails, forward raw text
+                res.write(`data: ${payload}\n\n`);
+              }
+            } else {
+              // Forward any non-standard lines as comments
+              res.write(`: ${line}\n\n`);
+            }
+          }
+        } catch (_) {
+          // Best-effort streaming; ignore chunk errors
+        }
+      });
+      r.on('end', () => {
+        try {
+          res.write('event: done\n');
+          res.write('data: [DONE]\n\n');
+        } finally {
+          res.end();
+        }
+      });
+    });
+
+    upstream.on('error', () => {
+      try {
+        res.write('event: error\n');
+        res.write('data: upstream_error\n\n');
+      } finally {
+        res.end();
+      }
+    });
+    upstream.write(requestPayload);
+    upstream.end();
+
+    // Abort upstream if client disconnects
+    req.on('close', () => {
+      try { upstream.destroy(); } catch {}
+    });
+  } catch (e) {
+    try {
+      res.write('event: error\n');
+      res.write(`data: ${e && e.message ? e.message : 'grok_stream_error'}\n\n`);
+    } finally {
+      res.end();
+    }
   }
 });
 
@@ -380,9 +605,21 @@ app.post('/api/grok/analyze', async (req, res) => {
     const body = req.body || {};
     const symbol = (body.symbol || '').toString();
     const series = body.series || {}; // { dates:[], closes:[], volumes:[] }
+    // Simple 10-minute cache keyed by symbol + model + length + last values
+    const modelForAnalyze = XAI_MODEL || 'grok-2-latest';
+    const closes = Array.isArray(series.closes) ? series.closes : [];
+    const dates = Array.isArray(series.dates) ? series.dates : [];
+    const cacheKey = `grok:analyze:${modelForAnalyze}:${symbol}:${closes.length}:${dates.length}:${closes.slice(-5).join(',')}:${(dates.slice(-2)||[]).join(',')}`;
+    const nowTs = Date.now();
+    const ttlAnalyzeMs = 10 * 60 * 1000; // 10 minutes
+    const existing = cache.get(cacheKey);
+    if (existing && (nowTs - existing.ts) < ttlAnalyzeMs) {
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(200).send(existing.body);
+    }
     const latest = Array.isArray(series.closes) && series.closes.length ? series.closes[series.closes.length - 1] : null;
     const payload = {
-      model: XAI_MODEL || 'grok-2-latest',
+      model: modelForAnalyze,
       messages: [
         { role: 'system', content: 'You are a senior equity analyst. Return concise JSON.' },
         { role: 'user', content: `Analyze ${symbol} given this JSON series (daily closes, volumes, dates). Return strict JSON with keys: summary, risks, levels {support,resistance}, outlook, actions. Series: ${JSON.stringify({ symbol, series, latest })}` }
@@ -417,12 +654,442 @@ app.post('/api/grok/analyze', async (req, res) => {
       const text = j?.choices?.[0]?.message?.content || '';
       let parsed;
       try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
-      return res.json({ symbol, analysis: parsed });
+      const outObj = { symbol, analysis: parsed };
+      const outStr = JSON.stringify(outObj);
+      cache.set(cacheKey, { ts: Date.now(), status: 200, body: outStr });
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(200).send(outStr);
     } catch {
       return res.status(response.status).send(response.body);
     }
   } catch (e) {
     return res.status(500).json({ error: e && e.message ? e.message : 'grok_analyze_error' });
+  }
+});
+
+// Natural Language Screener: { apiKey, query, universe?, size? }
+app.post('/api/grok/screener', async (req, res) => {
+  try {
+    const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
+    const apiKeyToUse = providedKey || XAI_API_KEY;
+    if (!apiKeyToUse) {
+      return res.status(400).json({ error: 'Missing xAI API key. Provide header x-xai-api-key or body.apiKey.' });
+    }
+    const body = req.body || {};
+    const nlQuery = (body.query || '').toString().trim();
+    if (!nlQuery) return res.status(400).json({ error: 'query required' });
+    let universe = Array.isArray(body.universe) ? body.universe.map((s)=> (s||'').toString().trim()).filter(Boolean) : [];
+    const size = Math.min(20, Math.max(1, Number(body.size || 10)));
+    if (!universe.length) {
+      universe = ['NVDA','MSFT','AAPL','AMZN','GOOGL','META','TSLA','AMD','AVGO','ORCL','LLY','ABBV','NFLX','CRM','INTC','ADBE','SHOP','BABA','0700.HK','9988.HK'];
+    }
+
+    const modelId = XAI_MODEL || 'grok-2-latest';
+    const cacheKey = `grok:screener:${modelId}:${nlQuery}:${universe.join(',')}:${size}`;
+    const nowTs = Date.now();
+    const ttlMs = 10 * 60 * 1000;
+    const cached = cache.get(cacheKey);
+    if (cached && (nowTs - cached.ts) < ttlMs) {
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(200).send(cached.body);
+    }
+
+    // Fetch lightweight metrics via Yahoo for each symbol
+    async function fetchQuote(sym) {
+      const u1 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+      let { status, body } = await tryFetchWithFallback(u1);
+      if (status !== 200 || !body) {
+        const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+        const r2 = await tryFetchWithFallback(u2);
+        status = r2.status; body = r2.body;
+      }
+      try {
+        const j = JSON.parse(body || '{}');
+        const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
+        if (!r) return { symbol: sym, ok: false };
+        return {
+          ok: true,
+          symbol: r.symbol,
+          shortName: r.shortName,
+          price: Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice),
+          changePercent: Number(r.regularMarketChangePercent ?? 0),
+          marketCap: Number(r.marketCap ?? 0),
+          trailingPE: Number(r.trailingPE ?? NaN),
+          forwardPE: Number(r.forwardPE ?? NaN),
+          pegRatio: Number(r.pegRatio ?? NaN),
+          beta: Number(r.beta ?? NaN),
+          currency: r.currency || 'USD',
+          sector: r.sector || '',
+          industry: r.industry || ''
+        };
+      } catch {
+        return { symbol: sym, ok: false };
+      }
+    }
+
+    const metrics = await Promise.all(universe.map(fetchQuote));
+    const dataset = metrics.filter(m => m && m.ok).map(({ ok, ...rest }) => rest);
+
+    // Compose prompt for Grok
+    const instruction = `You are a senior equity screener. Given a user natural-language screening request and a dataset of symbols with metrics, select up to ${size} symbols that best match. Return strict JSON: { criteria_explained: string, selected: string[], reasons: { [symbol]: string }, risks?: string[] }`;
+    const messages = [
+      { role: 'system', content: instruction },
+      { role: 'user', content: `Request: ${nlQuery}\n\nUniverse size: ${dataset.length}\nMetrics JSON: ${JSON.stringify(dataset).slice(0, 35000)}\n\nReturn JSON only.` }
+    ];
+
+    const baseUrl = XAI_API_BASE || 'https://api.x.ai/v1/chat/completions';
+    const urlObj = new URL(baseUrl);
+    const isHttps = urlObj.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    const options = {
+      method: 'POST',
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname + (urlObj.search || ''),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKeyToUse}`,
+        'Accept': 'application/json'
+      }
+    };
+    const payload = JSON.stringify({ model: modelId, messages, stream: false });
+    const forward = await new Promise((resolve, reject) => {
+      const req2 = lib.request(options, (r) => {
+        let data = '';
+        r.on('data', (chunk) => (data += chunk));
+        r.on('end', () => resolve({ status: r.statusCode || 500, body: data }));
+      });
+      req2.on('error', reject);
+      req2.write(payload);
+      req2.end();
+    });
+
+    let out;
+    try {
+      const j = JSON.parse(forward.body || '{}');
+      const text = j?.choices?.[0]?.message?.content || '';
+      out = JSON.parse(text);
+    } catch {
+      out = { raw: forward.body };
+    }
+
+    const responseObj = { query: nlQuery, universe, size, result: out, data: dataset };
+    const outStr = JSON.stringify(responseObj);
+    cache.set(cacheKey, { ts: Date.now(), status: 200, body: outStr });
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).send(outStr);
+  } catch (e) {
+    return res.status(500).json({ error: e && e.message ? e.message : 'grok_screener_error' });
+  }
+});
+
+// News insights TL;DR via Grok: { apiKey, symbol, lookbackDays? }
+app.post('/api/grok/news-insights', async (req, res) => {
+  try {
+    const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
+    const apiKeyToUse = providedKey || XAI_API_KEY;
+    if (!apiKeyToUse) return res.status(400).json({ error: 'Missing xAI API key. Provide header x-xai-api-key or body.apiKey.' });
+    const body = req.body || {};
+    const symbol = (body.symbol || '').toString().trim();
+    if (!symbol) return res.status(400).json({ error: 'symbol required' });
+    const lookbackDays = Math.min(30, Math.max(1, Number(body.lookbackDays || 7)));
+
+    const modelId = XAI_MODEL || 'grok-2-latest';
+    const cacheKey = `grok:news:${modelId}:${symbol}:${lookbackDays}`;
+    const nowTs = Date.now();
+    const ttlMs = 10 * 60 * 1000;
+    const cached = cache.get(cacheKey);
+    if (cached && (nowTs - cached.ts) < ttlMs) {
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(200).send(cached.body);
+    }
+
+    // Fetch simple headlines via DuckDuckGo
+    const q = encodeURIComponent(`${symbol} stock news ${new Date().getFullYear()}`);
+    const url = `https://duckduckgo.com/html/?q=${q}`;
+    const { body: html } = await fetchJson(url);
+    const items = [];
+    const regex = /<a[^>]*class="result__a"[^>]*>(.*?)<\/a>/gi;
+    let m;
+    while ((m = regex.exec(html || '')) !== null) {
+      const raw = m[1] || '';
+      const text = raw.replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, ' ').trim();
+      if (text) items.push(text);
+      if (items.length >= 8) break;
+    }
+    const headlines = items.slice(0, 8);
+
+    // Heuristic sentiment
+    const textAgg = headlines.join(' ').toLowerCase();
+    const posWords = ['beat','surge','rally','buy','upgrade','bullish','record','growth','strong','outperform'];
+    const negWords = ['miss','fall','drop','plunge','sell','downgrade','bearish','weak','underperform','cuts'];
+    let pos = 0, neg = 0;
+    posWords.forEach(w => { const c = (textAgg.match(new RegExp(`\\b${w}\\b`, 'g')) || []).length; pos += c; });
+    negWords.forEach(w => { const c = (textAgg.match(new RegExp(`\\b${w}\\b`, 'g')) || []).length; neg += c; });
+    const total = pos + neg;
+    const score = total > 0 ? Math.max(-1, Math.min(1, (pos - neg) / total)) : 0;
+
+    // Ask Grok for TL;DR
+    const instruction = 'You are a financial news analyst. Given recent headlines for a stock, produce a concise TL;DR with 3 bullets, top risks (<=3), and near-term catalysts (<=3). Return strict JSON: { tldr: string[], risks: string[], catalysts: string[], stance: "positive"|"neutral"|"negative" }';
+    const messages = [
+      { role: 'system', content: instruction },
+      { role: 'user', content: `Symbol: ${symbol}\nHeuristic sentiment score: ${score}\nHeadlines: ${JSON.stringify(headlines)}\nLookback days: ${lookbackDays}\nReturn JSON only.` }
+    ];
+
+    const baseUrl = XAI_API_BASE || 'https://api.x.ai/v1/chat/completions';
+    const urlObj = new URL(baseUrl);
+    const isHttps = urlObj.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    const options = {
+      method: 'POST',
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname + (urlObj.search || ''),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKeyToUse}`,
+        'Accept': 'application/json'
+      }
+    };
+    const payload = JSON.stringify({ model: modelId, messages, stream: false });
+    const forward = await new Promise((resolve, reject) => {
+      const req2 = lib.request(options, (r) => {
+        let data = '';
+        r.on('data', (chunk) => (data += chunk));
+        r.on('end', () => resolve({ status: r.statusCode || 500, body: data }));
+      });
+      req2.on('error', reject);
+      req2.write(payload);
+      req2.end();
+    });
+
+    let out;
+    try {
+      const j = JSON.parse(forward.body || '{}');
+      const text = j?.choices?.[0]?.message?.content || '';
+      out = JSON.parse(text);
+    } catch {
+      out = { raw: forward.body };
+    }
+    const responseObj = { symbol, headlines, heuristic: { score, pos, neg, total }, insights: out };
+    const outStr = JSON.stringify(responseObj);
+    cache.set(cacheKey, { ts: Date.now(), status: 200, body: outStr });
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).send(outStr);
+  } catch (e) {
+    return res.status(500).json({ error: e && e.message ? e.message : 'grok_news_error' });
+  }
+});
+
+// Peers compare benchmarking: { apiKey, symbol, peers?[] }
+app.post('/api/grok/peers-compare', async (req, res) => {
+  try {
+    const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
+    const apiKeyToUse = providedKey || XAI_API_KEY;
+    if (!apiKeyToUse) return res.status(400).json({ error: 'Missing xAI API key. Provide header x-xai-api-key or body.apiKey.' });
+    const body = req.body || {};
+    const symbol = (body.symbol || '').toString().trim();
+    if (!symbol) return res.status(400).json({ error: 'symbol required' });
+    let peers = Array.isArray(body.peers) ? body.peers.map(s => (s||'').toString().trim()).filter(Boolean) : [];
+    if (!peers.length) {
+      peers = ['MSFT','AAPL','AMZN','GOOGL','META','AMD','AVGO'];
+      peers = peers.filter(p => p !== symbol);
+    }
+    const universe = [symbol, ...peers];
+
+    const modelId = XAI_MODEL || 'grok-2-latest';
+    const cacheKey = `grok:peers:${modelId}:${universe.join(',')}`;
+    const cached = cache.get(cacheKey);
+    const nowTs = Date.now();
+    const ttlMs = 10 * 60 * 1000;
+    if (cached && (nowTs - cached.ts) < ttlMs) {
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(200).send(cached.body);
+    }
+
+    async function fetchQuote(sym) {
+      const u1 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+      let { status, body } = await tryFetchWithFallback(u1);
+      if (status !== 200 || !body) {
+        const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+        const r2 = await tryFetchWithFallback(u2);
+        status = r2.status; body = r2.body;
+      }
+      try {
+        const j = JSON.parse(body || '{}');
+        const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
+        if (!r) return { symbol: sym, ok: false };
+        return {
+          ok: true,
+          symbol: r.symbol,
+          shortName: r.shortName,
+          sector: r.sector || '',
+          industry: r.industry || '',
+          price: Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice),
+          changePercent: Number(r.regularMarketChangePercent ?? 0),
+          marketCap: Number(r.marketCap ?? 0),
+          trailingPE: Number(r.trailingPE ?? NaN),
+          forwardPE: Number(r.forwardPE ?? NaN),
+          pegRatio: Number(r.pegRatio ?? NaN),
+          beta: Number(r.beta ?? NaN),
+          dividendYield: Number(r.trailingAnnualDividendYield ?? NaN)
+        };
+      } catch {
+        return { symbol: sym, ok: false };
+      }
+    }
+
+    const metrics = await Promise.all(universe.map(fetchQuote));
+    const dataset = metrics.filter(m => m && m.ok).map(({ ok, ...rest }) => rest);
+    const instruction = 'You are an equity peer benchmarking analyst. Compare the target vs peers across valuation (PE, PEG), scale (marketCap), momentum (changePercent), risk (beta), income (dividendYield). Return strict JSON: { ranking: { overall: string[], value: string[], growth: string[], momentum: string[], risk: string[] }, summary: string, key_diffs: string[] }';
+    const messages = [
+      { role: 'system', content: instruction },
+      { role: 'user', content: `Target: ${symbol}\nPeers: ${peers.join(', ')}\nDataset: ${JSON.stringify(dataset)}\nReturn JSON only.` }
+    ];
+
+    const baseUrl = XAI_API_BASE || 'https://api.x.ai/v1/chat/completions';
+    const urlObj = new URL(baseUrl);
+    const isHttps = urlObj.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    const options = {
+      method: 'POST',
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname + (urlObj.search || ''),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKeyToUse}`,
+        'Accept': 'application/json'
+      }
+    };
+    const payload = JSON.stringify({ model: modelId, messages, stream: false });
+    const forward = await new Promise((resolve, reject) => {
+      const req2 = lib.request(options, (r) => {
+        let data = '';
+        r.on('data', (chunk) => (data += chunk));
+        r.on('end', () => resolve({ status: r.statusCode || 500, body: data }));
+      });
+      req2.on('error', reject);
+      req2.write(payload);
+      req2.end();
+    });
+
+    let out;
+    try {
+      const j = JSON.parse(forward.body || '{}');
+      const text = j?.choices?.[0]?.message?.content || '';
+      out = JSON.parse(text);
+    } catch {
+      out = { raw: forward.body };
+    }
+    const responseObj = { symbol, peers, data: dataset, compare: out };
+    const outStr = JSON.stringify(responseObj);
+    cache.set(cacheKey, { ts: Date.now(), status: 200, body: outStr });
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).send(outStr);
+  } catch (e) {
+    return res.status(500).json({ error: e && e.message ? e.message : 'grok_peers_error' });
+  }
+});
+
+// Portfolio Doctor: { apiKey, holdings: [{ symbol, weight }], budget? }
+app.post('/api/grok/portfolio-doctor', async (req, res) => {
+  try {
+    const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
+    const apiKeyToUse = providedKey || XAI_API_KEY;
+    if (!apiKeyToUse) return res.status(400).json({ error: 'Missing xAI API key. Provide header x-xai-api-key or body.apiKey.' });
+    const body = req.body || {};
+    const holdings = Array.isArray(body.holdings) ? body.holdings : [];
+    if (!holdings.length) return res.status(400).json({ error: 'holdings required' });
+    const budget = Number(body.budget || 100000);
+
+    const modelId = XAI_MODEL || 'grok-2-latest';
+    const cacheKey = `grok:portfolio:${modelId}:${holdings.map(h=>`${h.symbol}:${h.weight}`).join('|')}:${budget}`;
+    const cached = cache.get(cacheKey);
+    const nowTs = Date.now();
+    const ttlMs = 10 * 60 * 1000;
+    if (cached && (nowTs - cached.ts) < ttlMs) {
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(200).send(cached.body);
+    }
+
+    async function fetchQuote(sym) {
+      const u1 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+      let { status, body } = await tryFetchWithFallback(u1);
+      if (status !== 200 || !body) {
+        const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+        const r2 = await tryFetchWithFallback(u2);
+        status = r2.status; body = r2.body;
+      }
+      try {
+        const j = JSON.parse(body || '{}');
+        const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
+        if (!r) return { symbol: sym, ok: false };
+        return {
+          ok: true,
+          symbol: r.symbol,
+          price: Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice),
+          beta: Number(r.beta ?? NaN),
+          sector: r.sector || '',
+          industry: r.industry || ''
+        };
+      } catch {
+        return { symbol: sym, ok: false };
+      }
+    }
+
+    const symbols = holdings.map(h => (h.symbol || '').toString().trim()).filter(Boolean);
+    const quotes = await Promise.all(symbols.map(fetchQuote));
+    const data = quotes.filter(q => q && q.ok).map(({ ok, ...rest }) => rest);
+
+    const instruction = 'You are a portfolio risk doctor. Given holdings with weights and quotes (price, beta, sector/industry), identify top 3 risk sources, show simple factor exposure (beta proxy), sector/industry concentration, a correlation warning if likely (heuristic), and propose 2-3 hedging ideas or diversification swaps. Return strict JSON: { risks: string[], concentration: { sectors: { [key]: number }, industries: { [key]: number } }, factor_exposure: { beta: number }, hedges: string[], notes: string[] }';
+    const messages = [
+      { role: 'system', content: instruction },
+      { role: 'user', content: `Holdings: ${JSON.stringify(holdings)}\nQuotes: ${JSON.stringify(data)}\nBudget: ${budget}\nReturn JSON only.` }
+    ];
+
+    const baseUrl = XAI_API_BASE || 'https://api.x.ai/v1/chat/completions';
+    const urlObj = new URL(baseUrl);
+    const isHttps = urlObj.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    const options = {
+      method: 'POST',
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname + (urlObj.search || ''),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKeyToUse}`,
+        'Accept': 'application/json'
+      }
+    };
+    const payload = JSON.stringify({ model: modelId, messages, stream: false });
+    const forward = await new Promise((resolve, reject) => {
+      const req2 = lib.request(options, (r) => {
+        let data = '';
+        r.on('data', (chunk) => (data += chunk));
+        r.on('end', () => resolve({ status: r.statusCode || 500, body: data }));
+      });
+      req2.on('error', reject);
+      req2.write(payload);
+      req2.end();
+    });
+
+    let out;
+    try {
+      const j = JSON.parse(forward.body || '{}');
+      const text = j?.choices?.[0]?.message?.content || '';
+      out = JSON.parse(text);
+    } catch {
+      out = { raw: forward.body };
+    }
+    const responseObj = { holdings, budget, quotes: data, doctor: out };
+    const outStr = JSON.stringify(responseObj);
+    cache.set(cacheKey, { ts: Date.now(), status: 200, body: outStr });
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).send(outStr);
+  } catch (e) {
+    return res.status(500).json({ error: e && e.message ? e.message : 'grok_portfolio_error' });
   }
 });
 

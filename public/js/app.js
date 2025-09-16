@@ -629,6 +629,15 @@ class StockPredictionApp {
 
     async runPrediction() {
         const formData = this.getFormData();
+        // Normalize symbol for Yahoo
+        const normalizeYahoo = (s) => {
+            if (!s) return s;
+            let sym = (s+'').trim().toUpperCase();
+            if (/^HK:/.test(sym)) sym = sym.replace(/^HK:/,'') + '.HK';
+            if (/^\d{4}$/.test(sym)) sym = sym + '.HK';
+            return sym;
+        };
+        formData.symbol = normalizeYahoo(formData.symbol);
         if (!this.validateForm(formData)) return;
 
         this.showLoading(true);
@@ -655,10 +664,18 @@ class StockPredictionApp {
                     fetchReason = fetchReason || 'yahoo_insufficient_3_6mo';
                 }
             }
-            // Skip Alpha Vantage fallback; rely on Yahoo only
+            // Try 1y as last fallback
             if (closes.length < 30) {
-                console.error('Data fetch failed; reason:', fetchReason, 'symbol:', formData.symbol);
-                throw new Error('Data fetch failed, try again');
+                const ts1y = await this.fetchYahooHistorical(formData.symbol, '1y');
+                const closes1y = (ts1y?.closes || []).filter(v => isFinite(v) && v > 0);
+                if (closes1y.length >= 30) {
+                    closes = closes1y;
+                    dates = ts1y.dates || dates;
+                }
+            }
+            if (closes.length < 30) {
+                console.error('Data fetch failed; reason:', fetchReason || 'yahoo_insufficient_all', 'symbol:', formData.symbol);
+                throw new Error('資料不足，請確認代號格式（美股：AAPL；港股：0700.HK）或稍後重試');
             }
 
             // Real-time quote
@@ -3173,8 +3190,43 @@ document.addEventListener('DOMContentLoaded', () => {
         const promptEl = document.getElementById('grokPrompt');
         const outEl = document.getElementById('grokOutput');
         const keyEl = document.getElementById('grokApiKey');
+        const tplEl = document.getElementById('grokTemplate');
+        const toneEl = document.getElementById('grokTone');
+        const streamEl = document.getElementById('grokStream');
+        const cancelEl = document.getElementById('grokCancel');
         if (btn && promptEl && outEl) {
             let busy = false;
+            let currentAbort = null;
+            let grokModel = 'grok-2-latest';
+            // Fetch backend Grok config once
+            (async () => {
+                try {
+                    const cfgResp = await fetch(`${app.backendBase}/api/grok/config`).catch(()=>null);
+                    if (cfgResp && cfgResp.ok) {
+                        const cfg = await cfgResp.json();
+                        if (cfg && cfg.model) grokModel = cfg.model;
+                    }
+                } catch (_) {}
+            })();
+            const composeMessages = (userText) => {
+                const template = (tplEl && tplEl.value) || 'analyst';
+                const tone = (toneEl && toneEl.value) || 'neutral';
+                const sys = `You are a helpful financial analysis assistant. Tone: ${tone}. Return concise, factual answers.`;
+                let user = userText;
+                if (template === 'analyst') {
+                    user = `請以專業分析師角度精簡回答：${userText}`;
+                } else if (template === 'risk') {
+                    user = `聚焦風險與應對，條列重點：${userText}`;
+                } else if (template === 'news') {
+                    user = `整合近期新聞與情緒分數，提供三點結論：${userText}`;
+                } else if (template === 'screener') {
+                    user = `把以下自然語言轉為股票篩選條件並給出10隻候選：${userText}`;
+                }
+                return [
+                    { role: 'system', content: sys },
+                    { role: 'user', content: user }
+                ];
+            };
             btn.addEventListener('click', async () => {
                 if (busy) return;
                 const userText = (promptEl.value || '').trim();
@@ -3182,58 +3234,89 @@ document.addEventListener('DOMContentLoaded', () => {
                 busy = true;
                 const original = btn.innerHTML;
                 btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 等待 Grok 回覆...';
+                if (cancelEl) cancelEl.style.display = 'inline-flex';
                 outEl.textContent = '';
                 try {
                     const userGrokKey = keyEl && keyEl.value ? keyEl.value.trim() : '';
                     if (!userGrokKey) { outEl.textContent = '請先輸入 Grok API 金鑰'; throw new Error('missing_key'); }
-                    const url = `${app.backendBase}/api/grok/chat`;
-                    let resp;
-                    try {
-                        resp = await fetch(url, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                apiKey: userGrokKey,
-                                model: 'grok-2-latest',
-                                messages: [
-                                    { role: 'system', content: 'You are a helpful financial analysis assistant.' },
-                                    { role: 'user', content: userText }
-                                ]
-                            })
+                    const useStream = !!(streamEl && streamEl.checked);
+                    const messages = composeMessages(userText);
+                    if (useStream) {
+                        const streamUrl = `${app.backendBase}/api/grok/stream`;
+                        try {
+                            const init = {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ apiKey: userGrokKey, model: grokModel, messages })
+                            };
+                            const resp = await fetch(streamUrl, init);
+                            if (!resp.ok || !resp.body) {
+                                throw new Error(`HTTP ${resp.status}`);
+                            }
+                            const reader = resp.body.getReader();
+                            currentAbort = reader;
+                            const decoder = new TextDecoder('utf-8');
+                            let buffer = '';
+                            while (true) {
+                                const { value, done } = await reader.read();
+                                if (done) break;
+                                buffer += decoder.decode(value, { stream: true });
+                                const parts = buffer.split('\n\n');
+                                buffer = parts.pop() || '';
+                                for (const part of parts) {
+                                    const line = part.trim();
+                                    if (!line) continue;
+                                    if (line.startsWith('data:')) {
+                                        const payload = line.slice(5).trim();
+                                        if (payload === '[DONE]') continue;
+                                        try {
+                                            outEl.textContent += payload.replace(/\\n/g, '\n');
+                                        } catch (_) {
+                                            outEl.textContent += payload;
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            const chatUrl = `${app.backendBase}/api/grok/chat`;
+                            const resp = await fetch(chatUrl, {
+                                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ apiKey: userGrokKey, model: grokModel, messages })
+                            });
+                            const data = await resp.json();
+                            const text = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content)
+                                || data?.message || JSON.stringify(data, null, 2);
+                            outEl.textContent = text;
+                        }
+                    } else {
+                        const chatUrl = `${app.backendBase}/api/grok/chat`;
+                        const resp = await fetch(chatUrl, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey: userGrokKey, model: grokModel, messages })
                         });
-                    } catch (e1) {
-                        // Fallback to localhost dev server
-                        const localUrl = `http://localhost:3001/api/grok/chat`;
-                        resp = await fetch(localUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                apiKey: userGrokKey,
-                                model: 'grok-2-latest',
-                                messages: [
-                                    { role: 'system', content: 'You are a helpful financial analysis assistant.' },
-                                    { role: 'user', content: userText }
-                                ]
-                            })
-                        });
+                        const data = await resp.json();
+                        const text = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content)
+                            || data?.message || JSON.stringify(data, null, 2);
+                        outEl.textContent = text;
                     }
-                    if (!resp.ok) {
-                        const t = await resp.text().catch(()=> '');
-                        throw new Error(`HTTP ${resp.status} ${resp.statusText} ${t}`);
-                    }
-                    const data = await resp.json();
-                    const text = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content)
-                        || data?.message
-                        || JSON.stringify(data, null, 2);
-                    outEl.textContent = text;
                 } catch (e) {
                     outEl.textContent = '發生錯誤：' + (e && e.message ? e.message : 'unknown') + '\n' +
                         '請確認：伺服器正在運行、可從此域名訪問 /api/grok/chat、以及金鑰正確。';
                 } finally {
                     btn.innerHTML = original;
+                    if (cancelEl) cancelEl.style.display = 'none';
+                    currentAbort = null;
                     busy = false;
                 }
             });
+            if (cancelEl) {
+                cancelEl.addEventListener('click', async () => {
+                    try {
+                        if (currentAbort && currentAbort.cancel) currentAbort.cancel();
+                        if (currentAbort && currentAbort.releaseLock) currentAbort.releaseLock();
+                    } catch (_) {}
+                });
+            }
         }
     } catch (_) {}
     // Register service worker only on http(s)
@@ -3245,4 +3328,825 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (_) {}
     }
+    // Copilot sidebar
+    try {
+        const panel = document.getElementById('copilotPanel');
+        const toggle = document.getElementById('copilotToggle');
+        const closeBtn = document.getElementById('copilotClose');
+        const inputEl = document.getElementById('copilotInput');
+        const apiKeyEl = document.getElementById('copilotApiKey');
+        const intentEl = document.getElementById('copilotIntent');
+        const sendBtn = document.getElementById('copilotSend');
+        const histEl = document.getElementById('copilotHistory');
+        const exportJson = document.getElementById('copilotExportJson');
+        const exportMd = document.getElementById('copilotExportMd');
+        const history = [];
+        let copilotLang = (document.documentElement.lang || 'zh-HK').toLowerCase();
+        function openPanel() { panel.style.right = '0px'; }
+        function closePanel() { panel.style.right = '-420px'; }
+        function renderHistory() {
+            if (!histEl) return;
+            if (!history.length) { histEl.innerHTML = '<div class="help-text">尚無對話</div>'; return; }
+            histEl.innerHTML = history.map(h => `<div style="margin-bottom:12px;"><div style=\"opacity:.7;font-size:12px\">${new Date(h.ts).toLocaleString()}</div><div><strong>Q:</strong> ${h.q}</div><pre class=\"code\" style=\"white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:8px;border-radius:6px;\">${(typeof h.a==='string')?h.a:JSON.stringify(h.a,null,2)}</pre></div>`).join('');
+        }
+        toggle && toggle.addEventListener('click', openPanel);
+        closeBtn && closeBtn.addEventListener('click', closePanel);
+        const langToggle = document.getElementById('langToggle');
+        if (langToggle) {
+            langToggle.addEventListener('click', () => {
+                copilotLang = copilotLang === 'en' ? 'zh-HK' : 'en';
+            });
+        }
+        exportJson && exportJson.addEventListener('click', () => {
+            const blob = new Blob([JSON.stringify(history, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `copilot-history-${Date.now()}.json`; a.click();
+            URL.revokeObjectURL(url);
+        });
+        exportMd && exportMd.addEventListener('click', () => {
+            const md = history.map(h => `### ${new Date(h.ts).toLocaleString()}\n\nQ: ${h.q}\n\nA:\n\n\`\`\`json\n${(typeof h.a==='string')?h.a:JSON.stringify(h.a,null,2)}\n\`\`\`\n`).join('\n');
+            const blob = new Blob([md], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `copilot-history-${Date.now()}.md`; a.click();
+            URL.revokeObjectURL(url);
+        });
+        async function routeCopilot(q, apiKey) {
+            const intent = (intentEl && intentEl.value) || 'auto';
+            const lower = q.toLowerCase();
+            const useIntent = intent === 'auto' ? (lower.includes('peer') ? 'peers' : lower.includes('news') ? 'news' : lower.includes('peg') || lower.includes('market cap') ? 'screener' : lower.includes('portfolio') ? 'portfolio' : 'chat') : intent;
+            const systemPrompt = copilotLang === 'en' ? 'You are a helpful financial assistant.' : '你是一位專業且簡潔的財經助理。';
+            if (useIntent === 'chat') {
+                const resp = await fetch(`${app.backendBase}/api/grok/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, model: 'grok-2-latest', messages: [{ role:'system', content: systemPrompt }, { role:'user', content:q }] }) });
+                const j = await resp.json();
+                const text = j?.choices?.[0]?.message?.content || JSON.stringify(j);
+                return text;
+            } else if (useIntent === 'screener') {
+                const resp = await fetch(`${app.backendBase}/api/grok/screener`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, query: q, size: 10 }) });
+                const j = await resp.json();
+                return j.result || j;
+            } else if (useIntent === 'news') {
+                const parts = q.split(/\s+/); const symbol = parts[0].toUpperCase();
+                const resp = await fetch(`${app.backendBase}/api/grok/news-insights`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, symbol, lookbackDays: 7 }) });
+                const j = await resp.json();
+                return j.insights || j;
+            } else if (useIntent === 'peers') {
+                const parts = q.split(/\s+/); const symbol = parts[0].toUpperCase();
+                const resp = await fetch(`${app.backendBase}/api/grok/peers-compare`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, symbol }) });
+                const j = await resp.json();
+                return j.compare || j;
+            } else if (useIntent === 'portfolio') {
+                const parsed = q.split(',').map(x=>x.trim()).filter(Boolean).map(x=>{ const [s,w]=x.split(':'); return { symbol:(s||'').trim().toUpperCase(), weight:Number(w||0) }; });
+                const resp = await fetch(`${app.backendBase}/api/grok/portfolio-doctor`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, holdings: parsed }) });
+                const j = await resp.json();
+                return j.doctor || j;
+            }
+            return { note: 'no_route' };
+        }
+        sendBtn && sendBtn.addEventListener('click', async () => {
+            const q = (inputEl && inputEl.value || '').trim();
+            const apiKey = (apiKeyEl && apiKeyEl.value || '').trim();
+            if (!q) return; if (!apiKey) { app.toast('請提供 Grok API Key'); return; }
+            const ts = Date.now();
+            try {
+                const a = await routeCopilot(q, apiKey);
+                history.push({ ts, q, a });
+                renderHistory();
+            } catch (e) {
+                history.push({ ts, q, a: { error: e && e.message ? e.message : 'unknown' } });
+                renderHistory();
+            }
+        });
+    } catch (_) {}
+    // TradingView Pro Chart
+    try {
+        const tvDiv = document.getElementById('tvContainer');
+        const tvDiv2 = document.getElementById('tvContainer2');
+        const tvLoad = document.getElementById('tvLoad');
+        const tvSymbolInput = document.getElementById('tvSymbol');
+        const emaEl = document.getElementById('tvEMA');
+        const rsiEl = document.getElementById('tvRSI');
+        const macdEl = document.getElementById('tvMACD');
+        const compareEl = document.getElementById('tvCompare');
+        const addCompare = document.getElementById('tvAddCompare');
+        const layoutSingle = document.getElementById('tvLayoutSingle');
+        const layoutTwo = document.getElementById('tvLayoutTwo');
+        const tfButtons = document.querySelectorAll('[data-tf]');
+        const tmplNameEl = document.getElementById('tvTemplateName');
+        const tmplSaveBtn = document.getElementById('tvTemplateSave');
+        const tmplApplySel = document.getElementById('tvTemplateApply');
+        const alertPriceEl = document.getElementById('tvAlertPrice');
+        const alertDirEl = document.getElementById('tvAlertDir');
+        const alertSoundEl = document.getElementById('tvAlertSound');
+        const alertSetBtn = document.getElementById('tvAlertSet');
+        const alertsListEl = document.getElementById('tvAlertsList');
+        const alertBackendEl = document.getElementById('tvAlertBackend');
+        const alertsRefreshBtn = document.getElementById('tvAlertsRefresh');
+        const drawCanvas = document.getElementById('tvDraw');
+        const drawTrendBtn = document.getElementById('tvDrawTrend');
+        const drawHLineBtn = document.getElementById('tvDrawHLine');
+        const drawFiboBtn = document.getElementById('tvDrawFibo');
+        const drawClearBtn = document.getElementById('tvDrawClear');
+        const drawColorEl = document.getElementById('tvDrawColor');
+        const drawWidthEl = document.getElementById('tvDrawWidth');
+        let tvWidget = null;
+        let tvWidget2 = null;
+        let compares = [];
+        let timeframe = 'D';
+        let alertTimer = null;
+        let drawMode = null; // 'trend' | 'hline' | 'fibo' | null
+        let drawings = []; // {type, points:[{x,y}], symbol, color, width}
+        let currentPoints = [];
+        let selectedIdx = -1;
+        function symbolKey() {
+            return (tvSymbolInput && tvSymbolInput.value || 'AAPL').toUpperCase();
+        }
+        function readDrawings() {
+            try { return JSON.parse(localStorage.getItem('tv_drawings')||'{}'); } catch(_) { return {}; }
+        }
+        function writeDrawings(store) {
+            try { localStorage.setItem('tv_drawings', JSON.stringify(store)); } catch(_) {}
+        }
+        function loadDrawingsForSymbol() {
+            const store = readDrawings();
+            drawings = store[symbolKey()] || [];
+            redraw();
+        }
+        function saveDrawingsForSymbol() {
+            const store = readDrawings();
+            store[symbolKey()] = drawings;
+            writeDrawings(store);
+        }
+        function resizeCanvas() {
+            if (!drawCanvas) return;
+            const rect = drawCanvas.getBoundingClientRect();
+            drawCanvas.width = rect.width * (window.devicePixelRatio || 1);
+            drawCanvas.height = rect.height * (window.devicePixelRatio || 1);
+            const ctx = drawCanvas.getContext('2d');
+            ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+            redraw();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        function redraw() {
+            if (!drawCanvas) return;
+            const ctx = drawCanvas.getContext('2d');
+            ctx.clearRect(0,0,drawCanvas.width, drawCanvas.height);
+            for (let i=0;i<drawings.length;i++) {
+                const d = drawings[i];
+                ctx.strokeStyle = d.color || '#22d3ee';
+                ctx.lineWidth = d.width || 2;
+                ctx.fillStyle = 'rgba(34,211,238,0.12)';
+                if (d.type === 'trend' && d.points.length >= 2) {
+                    const [p1,p2] = d.points; ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+                } else if (d.type === 'hline' && d.points.length >= 1) {
+                    const y = d.points[0].y; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(drawCanvas.width, y); ctx.stroke();
+                } else if (d.type === 'fibo' && d.points.length >= 2) {
+                    const [p1,p2] = d.points; const top = Math.min(p1.y,p2.y), bot = Math.max(p1.y,p2.y);
+                    const levels = [0,0.236,0.382,0.5,0.618,0.786,1];
+                    levels.forEach(l=>{ const y = bot - (bot-top)*l; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(drawCanvas.width, y); ctx.stroke(); });
+                }
+                if (i === selectedIdx) {
+                    ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+                    const bb = boundingBox(d);
+                    if (bb) { ctx.strokeRect(bb.x, bb.y, bb.w, bb.h); }
+                    ctx.setLineDash([]);
+                }
+            }
+            if (currentPoints.length === 1) {
+                const p = currentPoints[0]; ctx.beginPath(); ctx.arc(p.x,p.y,3,0,Math.PI*2); ctx.fill();
+            }
+        }
+        function boundingBox(d) {
+            const xs = d.points.map(p=>p.x), ys = d.points.map(p=>p.y);
+            if (!xs.length) return null; const minx = Math.min(...xs), maxx = Math.max(...xs), miny = Math.min(...ys), maxy = Math.max(...ys);
+            return { x: minx-6, y: miny-6, w: (maxx-minx)+12, h: (maxy-miny)+12 };
+        }
+        function hitTest(x, y) {
+            for (let i=drawings.length-1;i>=0;i--) {
+                const bb = boundingBox(drawings[i]); if (!bb) continue;
+                if (x>=bb.x && x<=bb.x+bb.w && y>=bb.y && y<=bb.y+bb.h) return i;
+            }
+            return -1;
+        }
+        function attachDrawEvents() {
+            if (!drawCanvas) return;
+            let dragging = false; let dragOffset = { x:0, y:0 };
+            drawCanvas.addEventListener('mousedown', (e) => {
+                const rect = drawCanvas.getBoundingClientRect();
+                const x = (e.clientX - rect.left), y = (e.clientY - rect.top);
+                if (!drawMode) {
+                    selectedIdx = hitTest(x, y);
+                    if (selectedIdx >= 0) {
+                        const d = drawings[selectedIdx]; const bb = boundingBox(d);
+                        dragOffset = { x: x - (bb?.x||0), y: y - (bb?.y||0) };
+                        dragging = true;
+                    }
+                    redraw();
+                    return;
+                }
+                currentPoints.push({ x, y });
+                if ((drawMode === 'trend' && currentPoints.length === 2) || (drawMode === 'fibo' && currentPoints.length === 2) || (drawMode === 'hline' && currentPoints.length === 1)) {
+                    drawings.push({ type: drawMode, points: currentPoints.slice(), symbol: symbolKey(), color: (drawColorEl && drawColorEl.value) || '#22d3ee', width: Number(drawWidthEl && drawWidthEl.value || 2) });
+                    currentPoints = []; drawMode = null; saveDrawingsForSymbol(); redraw();
+                } else { redraw(); }
+            });
+            drawCanvas.addEventListener('mousemove', (e) => {
+                if (currentPoints.length) { redraw(); return; }
+                if (dragging && selectedIdx >= 0) {
+                    const rect = drawCanvas.getBoundingClientRect(); const x = (e.clientX - rect.left), y = (e.clientY - rect.top);
+                    const d = drawings[selectedIdx]; const bb = boundingBox(d); if (!bb) return;
+                    const dx = x - (bb.x + dragOffset.x), dy = y - (bb.y + dragOffset.y);
+                    d.points = d.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+                    redraw();
+                }
+            });
+            drawCanvas.addEventListener('mouseup', () => { if (dragging) { dragging = false; saveDrawingsForSymbol(); } });
+            window.addEventListener('keydown', (e) => {
+                if (e.key.toLowerCase() === 't') { drawMode = 'trend'; }
+                else if (e.key.toLowerCase() === 'h') { drawMode = 'hline'; }
+                else if (e.key.toLowerCase() === 'f') { drawMode = 'fibo'; }
+                else if (e.key === 'Escape') { drawMode = null; currentPoints = []; redraw(); }
+                else if (e.key === 'Delete') { if (selectedIdx>=0) { drawings.splice(selectedIdx,1); selectedIdx=-1; } else { drawings.pop(); } saveDrawingsForSymbol(); redraw(); }
+            });
+            drawTrendBtn && drawTrendBtn.addEventListener('click', ()=> drawMode = 'trend');
+            drawHLineBtn && drawHLineBtn.addEventListener('click', ()=> drawMode = 'hline');
+            drawFiboBtn && drawFiboBtn.addEventListener('click', ()=> drawMode = 'fibo');
+            drawClearBtn && drawClearBtn.addEventListener('click', ()=> { drawings = []; saveDrawingsForSymbol(); redraw(); });
+        }
+        attachDrawEvents();
+        function readAlerts() {
+            try { return JSON.parse(localStorage.getItem('tv_alerts')||'[]'); } catch(_) { return []; }
+        }
+        function writeAlerts(arr) {
+            try { localStorage.setItem('tv_alerts', JSON.stringify(arr)); } catch(_) {}
+        }
+        async function renderAlerts() {
+            const backend = alertBackendEl && alertBackendEl.checked;
+            const arr = backend ? (await fetch(`${app.backendBase}/api/alerts`).then(r=>r.json()).then(j=>j.alerts||[]).catch(()=>[])) : readAlerts();
+            if (!alertsListEl) return;
+            if (!arr.length) { alertsListEl.textContent = '—'; return; }
+            alertsListEl.innerHTML = '<table><thead><tr><th>Symbol</th><th>Dir</th><th>Price</th><th>Status</th><th></th></tr></thead><tbody>' +
+                arr.map((a,i)=>`<tr><td>${a.symbol}</td><td>${a.dir}</td><td>${a.price}</td><td>${a.fired?'Fired':'Active'}</td><td><button data-del="${backend?a.id:i}" class="btn btn-danger btn-sm">刪除</button></td></tr>`).join('') + '</tbody></table>';
+            alertsListEl.querySelectorAll('button[data-del]').forEach(btn=>{
+                btn.addEventListener('click', async () => {
+                    const key = btn.getAttribute('data-del');
+                    if (backend) {
+                        await fetch(`${app.backendBase}/api/alerts/${encodeURIComponent(key)}`, { method:'DELETE' }).catch(()=>{});
+                        renderAlerts();
+                    } else {
+                        const idx = Number(key);
+                        const arr2 = readAlerts();
+                        arr2.splice(idx,1); writeAlerts(arr2); renderAlerts();
+                    }
+                });
+            });
+        }
+        renderAlerts();
+        alertsRefreshBtn && alertsRefreshBtn.addEventListener('click', () => renderAlerts());
+        function loadTemplatesDropdown() {
+            try {
+                const t = JSON.parse(localStorage.getItem('tv_templates')||'{}');
+                tmplApplySel.innerHTML = '<option value="">Apply Template…</option>' + Object.keys(t).map(k=>`<option value="${k}">${k}</option>`).join('');
+            } catch(_){}
+        }
+        function saveTvState() {
+            try { localStorage.setItem('tv_state', JSON.stringify({ compares, timeframe, layout: tvDiv2 && tvDiv2.style.display !== 'none' ? 'two' : 'single' })); } catch (_) {}
+        }
+        function loadTvState() {
+            try { const s = JSON.parse(localStorage.getItem('tv_state')||'{}'); compares = Array.isArray(s.compares)?s.compares:[]; timeframe = s.timeframe || 'D'; if (s.layout === 'two' && tvDiv2) tvDiv2.style.display = ''; } catch (_) {}
+        }
+        loadTvState();
+        loadTemplatesDropdown();
+        function mapToTvSymbol(sym) {
+            if (!sym) return 'AAPL';
+            const s = sym.trim().toUpperCase();
+            if (s.endsWith('.HK')) return `HKEX:${s.replace('.HK','')}`;
+            return s; // default assumes US
+        }
+        async function loadTv(sym) {
+            const symbol = mapToTvSymbol(sym || tvSymbolInput.value || 'AAPL');
+            if (!window.TradingView || !tvDiv) return;
+            tvDiv.innerHTML = '';
+            tvWidget = new TradingView.widget({
+                symbol,
+                interval: timeframe,
+                container_id: 'tvContainer',
+                library_path: undefined,
+                autosize: true,
+                theme: (document.documentElement.classList.contains('dark') ? 'dark' : 'dark'),
+                locale: (document.documentElement.lang || 'en'),
+                hide_top_toolbar: false,
+                hide_legend: false,
+                allow_symbol_change: true,
+                studies: [
+                    ...(emaEl && emaEl.checked ? ['Moving Average Exponential@tv-basicstudies'] : []),
+                    ...(rsiEl && rsiEl.checked ? ['Relative Strength Index@tv-basicstudies'] : []),
+                    ...(macdEl && macdEl.checked ? ['MACD@tv-basicstudies'] : [])
+                ],
+                compare_symbols: compares
+            });
+            if (tvDiv2 && tvDiv2.style.display !== 'none') {
+                tvDiv2.innerHTML = '';
+                tvWidget2 = new TradingView.widget({
+                    symbol,
+                    interval: timeframe,
+                    container_id: 'tvContainer2',
+                    autosize: true,
+                    theme: (document.documentElement.classList.contains('dark') ? 'dark' : 'dark'),
+                    locale: (document.documentElement.lang || 'en'),
+                    hide_top_toolbar: false,
+                    hide_legend: false,
+                    allow_symbol_change: true
+                });
+                // After second widget ready, setup sync
+                tvWidget2.onChartReady && tvWidget2.onChartReady(() => {
+                    const c2 = tvWidget2.activeChart();
+                    const c1 = tvWidget && tvWidget.activeChart && tvWidget.activeChart();
+                    if (!c1 || !c2) return;
+                    // Sync visible range from c1 -> c2
+                    c1.onVisibleRangeChanged().subscribe(null, (range) => {
+                        try { if (range && range.from && range.to) c2.setVisibleRange(range); } catch(_){}
+                    });
+                    // Sync interval change
+                    c1.onIntervalChanged().subscribe(null, (res) => {
+                        try { if (res && res.interval) c2.setResolution(res.interval); } catch(_){}
+                    });
+                    // Sync symbol change
+                    c1.onSymbolChanged().subscribe(null, (symInfo) => {
+                        try { if (symInfo && symInfo.name) c2.setSymbol(symInfo.name); } catch(_){}
+                    });
+                });
+            }
+            saveTvState();
+        }
+        if (tvLoad) tvLoad.addEventListener('click', () => loadTv());
+        if (addCompare) addCompare.addEventListener('click', () => {
+            const c = (compareEl && compareEl.value || '').trim();
+            if (!c) return;
+            compares.push(mapToTvSymbol(c));
+            loadTv();
+        });
+        if (tmplSaveBtn) tmplSaveBtn.addEventListener('click', () => {
+            const name = (tmplNameEl && tmplNameEl.value || '').trim();
+            if (!name) { app.toast && app.toast('請輸入模板名'); return; }
+            const t = {
+                studies: {
+                    EMA: !!(emaEl && emaEl.checked),
+                    RSI: !!(rsiEl && rsiEl.checked),
+                    MACD: !!(macdEl && macdEl.checked)
+                },
+                compares,
+                timeframe
+            };
+            try {
+                const store = JSON.parse(localStorage.getItem('tv_templates')||'{}');
+                store[name] = t; localStorage.setItem('tv_templates', JSON.stringify(store));
+                loadTemplatesDropdown();
+                app.toast && app.toast('模板已保存');
+            } catch(_) {}
+        });
+        if (tmplApplySel) tmplApplySel.addEventListener('change', () => {
+            const key = tmplApplySel.value;
+            if (!key) return;
+            try {
+                const store = JSON.parse(localStorage.getItem('tv_templates')||'{}');
+                const tpl = store[key];
+                if (!tpl) return;
+                if (emaEl) emaEl.checked = !!tpl.studies?.EMA;
+                if (rsiEl) rsiEl.checked = !!tpl.studies?.RSI;
+                if (macdEl) macdEl.checked = !!tpl.studies?.MACD;
+                compares = Array.isArray(tpl.compares)?tpl.compares:[];
+                timeframe = tpl.timeframe || timeframe;
+                loadTv();
+                app.toast && app.toast('模板已套用');
+            } catch(_) {}
+        });
+        async function pollAlerts() {
+            try {
+                const arr = readAlerts().filter(a => !a.fired);
+                const symbols = Array.from(new Set(arr.map(a => a.symbol))).filter(Boolean);
+                for (const sym of symbols) {
+                    const q = await fetch(`${app.backendBase}/api/yahoo/quote?symbol=${encodeURIComponent(sym)}`).then(r=>r.json());
+                    const r = q && q.quoteResponse && q.quoteResponse.result && q.quoteResponse.result[0];
+                    const price = r ? (r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice) : null;
+                    if (!price) continue;
+                    const latest = Number(price);
+                    const all = readAlerts();
+                    let changed = false;
+                    for (const a of all) {
+                        if (a.symbol !== sym || a.fired) continue;
+                        const hit = (a.dir === '>=') ? latest >= a.price : latest <= a.price;
+                        if (hit) {
+                            a.fired = true; changed = true;
+                            app.toast && app.toast(`到價觸發：${a.symbol} ${a.dir} ${a.price}（現價 ${latest}）`);
+                            if (alertSoundEl && alertSoundEl.checked) {
+                                try { new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=').play().catch(()=>{}); } catch(_) {}
+                            }
+                        }
+                    }
+                    if (changed) { writeAlerts(all); renderAlerts(); }
+                }
+            } catch(_) {}
+        }
+        if (alertSetBtn) alertSetBtn.addEventListener('click', async () => {
+            const price = Number(alertPriceEl && alertPriceEl.value || 0);
+            const sym = (tvSymbolInput && tvSymbolInput.value || '').trim();
+            const dir = (alertDirEl && alertDirEl.value) || '>=';
+            if (!price || !sym) { app.toast && app.toast('請輸入代號與價格'); return; }
+            const backend = alertBackendEl && alertBackendEl.checked;
+            if (backend) {
+                try { await fetch(`${app.backendBase}/api/alerts`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ symbol: sym, dir, price }) }); } catch(_){ }
+                renderAlerts();
+                app.toast && app.toast('後端提醒已新增（每分鐘檢查）');
+            } else {
+                const all = readAlerts();
+                all.push({ symbol: sym, dir, price, fired: false, createdAt: Date.now() });
+                writeAlerts(all); renderAlerts();
+                if (alertTimer) clearInterval(alertTimer);
+                alertTimer = setInterval(pollAlerts, 15000);
+                app.toast && app.toast('到價提醒已新增（每 15 秒輪詢）');
+            }
+        });
+        tfButtons.forEach(btn => btn.addEventListener('click', () => { timeframe = btn.getAttribute('data-tf') || 'D'; loadTv(); }));
+        if (layoutSingle) layoutSingle.addEventListener('click', () => { if (tvDiv2) { tvDiv2.style.display = 'none'; } loadTv(); });
+        if (layoutTwo) layoutTwo.addEventListener('click', () => { if (tvDiv2) { tvDiv2.style.display = ''; } loadTv(); });
+        // Sync when tab opened with current stockSymbol if present
+        const proTab = document.getElementById('tab-prochart');
+        if (proTab) {
+            proTab.addEventListener('click', () => {
+                const stockInput = document.getElementById('stockSymbol');
+                if (stockInput && stockInput.value) tvSymbolInput.value = stockInput.value.trim();
+                setTimeout(() => loadTv(tvSymbolInput.value), 50);
+                setTimeout(() => { resizeCanvas(); loadDrawingsForSymbol(); }, 200);
+            });
+        }
+    } catch (_) {}
+    // Wire NL Screener
+    try {
+        const runBtn = document.getElementById('screenerRun');
+        const qEl = document.getElementById('screenerQuery');
+        const uEl = document.getElementById('screenerUniverse');
+        const nEl = document.getElementById('screenerSize');
+        const kEl = document.getElementById('screenerGrokKey');
+        const outEl = document.getElementById('screenerOutput');
+        if (runBtn && qEl && outEl) {
+            let busy = false;
+            runBtn.addEventListener('click', async () => {
+                if (busy) return; busy = true;
+                const original = runBtn.innerHTML;
+                runBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Running...';
+                outEl.textContent = '—';
+                try {
+                    const query = (qEl.value || '').trim();
+                    if (!query) { outEl.textContent = '請輸入條件描述'; throw new Error('missing_query'); }
+                    const apiKey = (kEl && kEl.value || '').trim();
+                    if (!apiKey) { outEl.textContent = '請提供 Grok API Key'; throw new Error('missing_key'); }
+                    const size = Math.max(1, Math.min(20, Number(nEl && nEl.value || 10)));
+                    const universe = (uEl && uEl.value || '').split(',').map(s=>s.trim()).filter(Boolean);
+                    let resp;
+                    try {
+                        resp = await fetch(`${app.backendBase}/api/grok/screener`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey, query, size, universe })
+                        });
+                    } catch (_) {
+                        resp = await fetch(`http://localhost:3001/api/grok/screener`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey, query, size, universe })
+                        });
+                    }
+                    const j = await resp.json();
+                    outEl.textContent = JSON.stringify(j.result || j, null, 2);
+                } catch (e) {
+                    outEl.textContent = '發生錯誤：' + (e && e.message ? e.message : 'unknown');
+                } finally {
+                    runBtn.innerHTML = original;
+                    busy = false;
+                }
+            });
+        }
+    } catch (_) {}
+    // Wire News Insights
+    try {
+        const btn = document.getElementById('newsRun');
+        const symEl = document.getElementById('newsSymbol');
+        const daysEl = document.getElementById('newsDays');
+        const keyEl = document.getElementById('newsGrokKey');
+        const outEl = document.getElementById('newsOutput');
+        if (btn && symEl && daysEl && keyEl && outEl) {
+            let busy = false;
+            btn.addEventListener('click', async () => {
+                if (busy) return; busy = true;
+                const original = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Running...';
+                outEl.textContent = '—';
+                try {
+                    const symbol = (symEl.value || '').trim();
+                    const apiKey = (keyEl.value || '').trim();
+                    const lookbackDays = Math.max(1, Math.min(30, Number(daysEl.value || 7)));
+                    if (!symbol) { outEl.textContent = '請輸入股票代號'; throw new Error('missing_symbol'); }
+                    if (!apiKey) { outEl.textContent = '請提供 Grok API Key'; throw new Error('missing_key'); }
+                    let resp;
+                    try {
+                        resp = await fetch(`${app.backendBase}/api/grok/news-insights`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey, symbol, lookbackDays })
+                        });
+                    } catch (_) {
+                        resp = await fetch(`http://localhost:3001/api/grok/news-insights`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey, symbol, lookbackDays })
+                        });
+                    }
+                    const j = await resp.json();
+                    outEl.textContent = JSON.stringify(j.insights || j, null, 2);
+                } catch (e) {
+                    outEl.textContent = '發生錯誤：' + (e && e.message ? e.message : 'unknown');
+                } finally {
+                    btn.innerHTML = original;
+                    busy = false;
+                }
+            });
+        }
+    } catch (_) {}
+    // Wire Peers Compare
+    try {
+        const btn = document.getElementById('peersRun');
+        const targetEl = document.getElementById('peersTarget');
+        const peersEl = document.getElementById('peersList');
+        const keyEl = document.getElementById('peersGrokKey');
+        const outEl = document.getElementById('peersOutput');
+        if (btn && targetEl && peersEl && keyEl && outEl) {
+            let busy = false;
+            btn.addEventListener('click', async () => {
+                if (busy) return; busy = true;
+                const original = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Running...';
+                outEl.textContent = '—';
+                try {
+                    const symbol = (targetEl.value || '').trim();
+                    const apiKey = (keyEl.value || '').trim();
+                    const peers = (peersEl.value || '').split(',').map(s=>s.trim()).filter(Boolean);
+                    if (!symbol) { outEl.textContent = '請輸入 Target 代號'; throw new Error('missing_symbol'); }
+                    if (!apiKey) { outEl.textContent = '請提供 Grok API Key'; throw new Error('missing_key'); }
+                    let resp;
+                    try {
+                        resp = await fetch(`${app.backendBase}/api/grok/peers-compare`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey, symbol, peers })
+                        });
+                    } catch (_) {
+                        resp = await fetch(`http://localhost:3001/api/grok/peers-compare`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey, symbol, peers })
+                        });
+                    }
+                    const j = await resp.json();
+                    outEl.textContent = JSON.stringify(j.compare || j, null, 2);
+                } catch (e) {
+                    outEl.textContent = '發生錯誤：' + (e && e.message ? e.message : 'unknown');
+                } finally {
+                    btn.innerHTML = original;
+                    busy = false;
+                }
+            });
+        }
+    } catch (_) {}
+    // Wire Portfolio Doctor
+    try {
+        const btn = document.getElementById('pfRun');
+        const hEl = document.getElementById('pfHoldings');
+        const bEl = document.getElementById('pfBudget');
+        const kEl = document.getElementById('pfGrokKey');
+        const outEl = document.getElementById('pfOutput');
+        if (btn && hEl && bEl && kEl && outEl) {
+            let busy = false;
+            btn.addEventListener('click', async () => {
+                if (busy) return; busy = true;
+                const original = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Diagnosing...';
+                outEl.textContent = '—';
+                try {
+                    const raw = (hEl.value || '').trim();
+                    const apiKey = (kEl.value || '').trim();
+                    const budget = Number(bEl.value || 100000);
+                    if (!raw) { outEl.textContent = '請輸入持倉，例如 AAPL:0.3,MSFT:0.4,TSLA:0.3'; throw new Error('missing_holdings'); }
+                    if (!apiKey) { outEl.textContent = '請提供 Grok API Key'; throw new Error('missing_key'); }
+                    const holdings = raw.split(',').map(x => x.trim()).filter(Boolean).map(x => {
+                        const [sym, wt] = x.split(':');
+                        return { symbol: (sym||'').trim(), weight: Number(wt || 0) };
+                    }).filter(h => h.symbol);
+                    let resp;
+                    try {
+                        resp = await fetch(`${app.backendBase}/api/grok/portfolio-doctor`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey, holdings, budget })
+                        });
+                    } catch (_) {
+                        resp = await fetch(`http://localhost:3001/api/grok/portfolio-doctor`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey, holdings, budget })
+                        });
+                    }
+                    const j = await resp.json();
+                    outEl.textContent = JSON.stringify(j.doctor || j, null, 2);
+                } catch (e) {
+                    outEl.textContent = '發生錯誤：' + (e && e.message ? e.message : 'unknown');
+                } finally {
+                    btn.innerHTML = original;
+                    busy = false;
+                }
+            });
+        }
+    } catch (_) {}
+    // Backtest MA Crossover
+    try {
+        const btRun = document.getElementById('btRun');
+        const btStrategy = document.getElementById('btStrategy');
+        const btFast = document.getElementById('btFast');
+        const btSlow = document.getElementById('btSlow');
+        const btCap = document.getElementById('btCapital');
+        const btFee = document.getElementById('btFeeBps');
+        const btRange = document.getElementById('btRange');
+        const btResults = document.getElementById('btResults');
+        const btAddCompare = document.getElementById('btAddCompare');
+        const btRunCompare = document.getElementById('btRunCompare');
+        const btCompareTable = document.getElementById('btCompareTable');
+        const btExportTrades = document.getElementById('btExportTrades');
+        const btExportReport = document.getElementById('btExportReport');
+        const btPresetName = document.getElementById('btPresetName');
+        const btPresetSave = document.getElementById('btPresetSave');
+        const btPresetApply = document.getElementById('btPresetApply');
+        const compareQueue = [];
+        function loadBtPresets() {
+            try {
+                const store = JSON.parse(localStorage.getItem('bt_presets')||'{}');
+                btPresetApply.innerHTML = '<option value="">Apply Preset…</option>' + Object.keys(store).map(k=>`<option value="${k}">${k}</option>`).join('');
+            } catch(_){}
+        }
+        loadBtPresets();
+        btPresetSave && btPresetSave.addEventListener('click', () => {
+            const name = (btPresetName && btPresetName.value || '').trim(); if (!name) { app.toast && app.toast('請輸入 Preset 名稱'); return; }
+            const p = { strat: btStrategy.value, fast: Number(btFast.value||10), slow: Number(btSlow.value||20), cap: Number(btCap.value||100000), fee: Number(btFee.value||5), range: btRange.value };
+            try { const store = JSON.parse(localStorage.getItem('bt_presets')||'{}'); store[name] = p; localStorage.setItem('bt_presets', JSON.stringify(store)); loadBtPresets(); app.toast && app.toast('Preset 已保存'); } catch(_){}
+        });
+        btPresetApply && btPresetApply.addEventListener('change', () => {
+            const key = btPresetApply.value; if (!key) return;
+            try { const store = JSON.parse(localStorage.getItem('bt_presets')||'{}'); const p = store[key]; if (!p) return;
+                btStrategy.value = p.strat || 'ma'; btFast.value = p.fast ?? 10; btSlow.value = p.slow ?? 20; btCap.value = p.cap ?? 100000; btFee.value = p.fee ?? 5; btRange.value = p.range || '2y';
+                app.toast && app.toast('Preset 已套用');
+            } catch(_){}
+        });
+        async function fetchCloses(symbol, years) {
+            try {
+                const range = years >= 5 ? '5y' : years >= 2 ? '2y' : '1y';
+                const url = `${app.backendBase}/api/yahoo/chart?symbol=${encodeURIComponent(symbol)}&range=${range}&interval=1d`;
+                const j = await fetch(url).then(r=>r.json());
+                const res = j && j.chart && j.chart.result && j.chart.result[0];
+                const closes = res ? res.indicators?.quote?.[0]?.close || [] : [];
+                const timestamps = res ? res.timestamp || [] : [];
+                return { closes: (closes||[]).filter(v=>isFinite(v)), timestamps };
+            } catch { return { closes: [], timestamps: [] }; }
+        }
+        function sma(arr, n) {
+            const out = []; let sum = 0; for (let i=0;i<arr.length;i++){ sum += arr[i]; if (i>=n) sum -= arr[i-n]; out.push(i>=n-1? sum/n : NaN); } return out;
+        }
+        function runMaCross(closes, fast, slow, capital, feeBps) {
+            if (!Array.isArray(closes) || closes.length < slow+2) return { trades:0, pnl:0, winrate:0, mdd:0, pf:0 };
+            const f = sma(closes, fast), s = sma(closes, slow);
+            let pos = 0, entry = 0, pnl = 0, wins = 0, losses = 0, eq = capital, peak = capital, maxDD = 0, trades = 0;
+            const tradesList = [];
+            for (let i=1;i<closes.length;i++){
+                const buy = f[i-1] <= s[i-1] && f[i] > s[i];
+                const sell = f[i-1] >= s[i-1] && f[i] < s[i];
+                const price = closes[i];
+                if (buy && !pos && isFinite(price)) { pos = eq/price; entry = price; trades++; eq -= eq * (feeBps/10000); tradesList.push({ side:'BUY', price, size: pos }); }
+                if (sell && pos && isFinite(price)) { const exitVal = pos*price; const tradePnL = exitVal - pos*entry; pnl += tradePnL; if (tradePnL>0) wins+=tradePnL; else losses += Math.abs(tradePnL); eq = eq + exitVal; pos = 0; eq -= eq * (feeBps/10000); tradesList.push({ side:'SELL', price, pnl: tradePnL }); }
+                peak = Math.max(peak, eq + (pos? pos*price : 0));
+                const cur = eq + (pos? pos*price : 0); maxDD = Math.max(maxDD, (peak - cur) / peak);
+            }
+            const winrate = (wins + losses) ? (wins/(wins+losses)) : 0;
+            const pf = losses ? (wins/losses) : (wins? Infinity:0);
+            return { trades, pnl, winrate, mdd: maxDD, pf, equity: eq, tradesList };
+        }
+        function runDonchian(closes, period, capital, feeBps) {
+            if (!Array.isArray(closes) || closes.length < period+2) return { trades:0, pnl:0, winrate:0, mdd:0, pf:0 };
+            let eq = capital, peak = capital, maxDD = 0, trades = 0, pnl = 0, wins = 0, losses = 0, pos = 0, entry = 0;
+            const tradesList = [];
+            for (let i=period;i<closes.length;i++){
+                const window = closes.slice(i-period, i);
+                const hh = Math.max(...window), ll = Math.min(...window);
+                const price = closes[i];
+                const buy = price > hh; const sell = price < ll;
+                if (buy && !pos && isFinite(price)) { pos = eq/price; entry = price; eq -= eq * (feeBps/10000); trades++; tradesList.push({ side:'BUY', price, size: pos }); }
+                if (sell && pos && isFinite(price)) { const exitVal = pos*price; const t = exitVal - pos*entry; pnl += t; if (t>0) wins+=t; else losses+=Math.abs(t); eq += exitVal; eq -= eq * (feeBps/10000); pos=0; tradesList.push({ side:'SELL', price, pnl: t }); }
+                peak = Math.max(peak, eq + (pos? pos*price : 0));
+                const cur = eq + (pos? pos*price : 0); maxDD = Math.max(maxDD, (peak - cur) / peak);
+            }
+            const winrate = (wins + losses) ? (wins/(wins+losses)) : 0;
+            const pf = losses ? (wins/losses) : (wins? Infinity:0);
+            return { trades, pnl, winrate, mdd: maxDD, pf, equity: eq, tradesList };
+        }
+        function runMeanRev(closes, lookback, zEntry, zExit, capital, feeBps) {
+            if (!Array.isArray(closes) || closes.length < lookback+2) return { trades:0, pnl:0, winrate:0, mdd:0, pf:0 };
+            const out = []; let eq = capital, peak = capital, maxDD = 0, trades = 0, pnl = 0, wins = 0, losses = 0, pos = 0, entry = 0; const tradesList = [];
+            for (let i=lookback;i<closes.length;i++){
+                const w = closes.slice(i-lookback,i);
+                const mean = w.reduce((a,b)=>a+b,0)/w.length;
+                const std = Math.sqrt(w.reduce((a,b)=>a+Math.pow(b-mean,2),0)/w.length) || 1e-9;
+                const price = closes[i];
+                const z = (price - mean)/std;
+                const buy = z < -Math.abs(zEntry);
+                const sell = (pos && Math.abs(z) < Math.abs(zExit)) || (!pos && z > Math.abs(zEntry));
+                if (buy && !pos) { pos = eq/price; entry = price; eq -= eq * (feeBps/10000); trades++; tradesList.push({ side:'BUY', price, size: pos }); }
+                if (sell && pos) { const exitVal = pos*price; const t = exitVal - pos*entry; pnl += t; if (t>0) wins+=t; else losses+=Math.abs(t); eq += exitVal; eq -= eq * (feeBps/10000); pos=0; tradesList.push({ side:'SELL', price, pnl: t }); }
+                peak = Math.max(peak, eq + (pos? pos*price : 0));
+                const cur = eq + (pos? pos*price : 0); maxDD = Math.max(maxDD, (peak - cur) / peak);
+            }
+            const winrate = (wins + losses) ? (wins/(wins+losses)) : 0;
+            const pf = losses ? (wins/losses) : (wins? Infinity:0);
+            return { trades, pnl, winrate, mdd: maxDD, pf, equity: eq, tradesList };
+        }
+        async function runOneStrategy(kind, closes, params, capital, fee) {
+            if (kind === 'ma') return runMaCross(closes, params.fast, params.slow, capital, fee);
+            if (kind === 'donchian') return runDonchian(closes, params.period || params.slow || 20, capital, fee);
+            if (kind === 'meanrev') return runMeanRev(closes, params.lookback || params.slow || 20, params.zEntry || 1, params.zExit || 0.5, capital, fee);
+            return { trades:0, pnl:0, winrate:0, mdd:0, pf:0 };
+        }
+        btRun && btRun.addEventListener('click', async () => {
+            try {
+                const sym = (document.getElementById('tvSymbol') && document.getElementById('tvSymbol').value || '').trim();
+                const fast = Math.max(1, parseInt(btFast.value||'10',10));
+                const slow = Math.max(fast+1, parseInt(btSlow.value||'20',10));
+                const cap = Math.max(1000, Number(btCap.value||100000));
+                const fee = Math.max(0, Number(btFee.value||5));
+                const yrs = btRange.value === '5y' ? 5 : btRange.value === '2y' ? 2 : 1;
+                if (!sym) { btResults.textContent = '請輸入代號'; return; }
+                btResults.textContent = 'Running...';
+                const { closes } = await fetchCloses(sym, yrs);
+                if (!closes.length) { btResults.textContent = '無歷史數據'; return; }
+                const strat = (btStrategy && btStrategy.value) || 'ma';
+                const res = await runOneStrategy(strat, closes, { fast, slow }, cap, fee);
+                const sharpe = (()=>{ const rets=[]; for(let i=1;i<closes.length;i++){ const r=(closes[i]/closes[i-1]-1); rets.push(r);} const mean=rets.reduce((a,b)=>a+b,0)/rets.length; const std=Math.sqrt(rets.reduce((a,b)=>a+Math.pow(b-mean,2),0)/rets.length)||1e-9; return (mean/std)*Math.sqrt(252); })();
+                const sortino = (()=>{ const rets=[]; for(let i=1;i<closes.length;i++){ rets.push(closes[i]/closes[i-1]-1);} const mean=rets.reduce((a,b)=>a+b,0)/rets.length; const neg=rets.filter(r=>r<0); const dn=Math.sqrt(neg.reduce((a,b)=>a+b*b,0)/Math.max(1,neg.length))||1e-9; return (mean/dn)*Math.sqrt(252); })();
+                const calmar = (()=>{ const totalRet = closes.length? (closes[closes.length-1]/closes[0]-1):0; const mdd = res.mdd||1e-9; return mdd? (totalRet/mdd) : 0; })();
+                btResults.innerHTML = `<div>
+                    <div>Trades: ${res.trades}</div>
+                    <div>PNL: ${res.pnl.toFixed(2)}</div>
+                    <div>Winrate (value-based): ${(res.winrate*100).toFixed(1)}%</div>
+                    <div>Profit Factor: ${res.pf.toFixed(2)}</div>
+                    <div>Max Drawdown: ${(res.mdd*100).toFixed(1)}%</div>
+                    <div>Sharpe: ${sharpe.toFixed(2)}</div>
+                    <div>Sortino: ${sortino.toFixed(2)}</div>
+                    <div>Calmar: ${calmar.toFixed(2)}</div>
+                </div>`;
+                btExportTrades && btExportTrades.addEventListener('click', () => {
+                    const rows = (res.tradesList||[]).map(t => `${t.side},${t.price},${t.size||''},${t.pnl||''}`).join('\n');
+                    const csv = 'side,price,size,pnl\n' + rows;
+                    const blob = new Blob([csv], { type:'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url; a.download = `trades_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(url);
+                }, { once: true });
+                btExportReport && btExportReport.addEventListener('click', () => {
+                    const md = `# Backtest Report\n\n- Symbol: ${(document.getElementById('tvSymbol')&&document.getElementById('tvSymbol').value)||''}\n- Strategy: ${strat}\n- Params: fast=${fast}, slow=${slow}\n- Capital: ${cap}\n- Fee (bps): ${fee}\n\n## Metrics\n- Trades: ${res.trades}\n- PNL: ${res.pnl.toFixed(2)}\n- Winrate: ${(res.winrate*100).toFixed(1)}%\n- Profit Factor: ${res.pf.toFixed(2)}\n- Max Drawdown: ${(res.mdd*100).toFixed(1)}%\n- Sharpe: ${sharpe.toFixed(2)}\n- Sortino: ${sortino.toFixed(2)}\n- Calmar: ${calmar.toFixed(2)}\n\n## Trades\n\nside,price,size,pnl\n${(res.tradesList||[]).map(t=>`${t.side},${t.price},${t.size||''},${t.pnl||''}`).join('\n')}\n`;
+                    const blob = new Blob([md], { type:'text/markdown' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `report_${Date.now()}.md`; a.click(); URL.revokeObjectURL(url);
+                }, { once: true });
+            } catch (e) {
+                btResults.textContent = '錯誤：' + (e && e.message ? e.message : 'unknown');
+            }
+        });
+        btAddCompare && btAddCompare.addEventListener('click', () => {
+            const sym = (document.getElementById('tvSymbol') && document.getElementById('tvSymbol').value || '').trim();
+            const fast = Math.max(1, parseInt(btFast.value||'10',10));
+            const slow = Math.max(fast+1, parseInt(btSlow.value||'20',10));
+            const strat = (btStrategy && btStrategy.value) || 'ma';
+            compareQueue.push({ sym, strat, params: { fast, slow } });
+            app.toast && app.toast('已加入對比清單');
+        });
+        btRunCompare && btRunCompare.addEventListener('click', async () => {
+            try {
+                if (!compareQueue.length) { btCompareTable.textContent = '對比清單為空'; return; }
+                btCompareTable.textContent = 'Running...';
+                const results = [];
+                for (const item of compareQueue) {
+                    const { closes } = await fetchCloses(item.sym, 2);
+                    const r = await runOneStrategy(item.strat, closes, item.params, Number(btCap.value||100000), Number(btFee.value||5));
+                    results.push({ ...item, res: r });
+                }
+                const rows = results.map(x => `<tr><td>${x.sym}</td><td>${x.strat}</td><td>${x.params.fast||x.params.period||x.params.lookback}/${x.params.slow||''}</td><td>${x.res.trades}</td><td>${x.res.pnl.toFixed(2)}</td><td>${(x.res.winrate*100).toFixed(1)}%</td><td>${x.res.pf.toFixed(2)}</td><td>${(x.res.mdd*100).toFixed(1)}%</td></tr>`).join('');
+                btCompareTable.innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;"><button id="btCompareExport" class="btn btn-secondary btn-sm"><i class=\"fas fa-file-csv\"></i> Export CSV</button></div><table><thead><tr><th>Symbol</th><th>Strategy</th><th>Params</th><th>Trades</th><th>PNL</th><th>Win%</th><th>PF</th><th>MDD</th></tr></thead><tbody>${rows}</tbody></table>`;
+                const exportBtn = document.getElementById('btCompareExport');
+                exportBtn && exportBtn.addEventListener('click', () => {
+                    const csvRows = ['symbol,strategy,params,trades,pnl,win_pct,pf,mdd'].concat(
+                        results.map(x => [x.sym,x.strat,`${x.params.fast||x.params.period||x.params.lookback}/${x.params.slow||''}`,x.res.trades,x.res.pnl.toFixed(2),(x.res.winrate*100).toFixed(1),x.res.pf.toFixed(2),(x.res.mdd*100).toFixed(1)].join(','))
+                    ).join('\n');
+                    const blob = new Blob([csvRows], { type:'text/csv' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `compare_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(url);
+                });
+            } catch (e) {
+                btCompareTable.textContent = '錯誤：' + (e && e.message ? e.message : 'unknown');
+            }
+        });
+    } catch (_) {}
 });

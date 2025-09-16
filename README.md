@@ -28,7 +28,7 @@
 - Redis 6+
 - Docker & Docker Compose (可選)
 
-## 🔌 接入 xAI Grok（數據提取與分析）
+## 🔌 接入 xAI Grok（數據提取與分析，含串流與快取）
 
 ### 環境變數
 
@@ -47,6 +47,8 @@ XAI_MODEL=grok-2-latest
 伺服器新增了安全代理端點（避免在前端暴露金鑰）：
 
 - `POST /api/grok/chat`
+- `POST /api/grok/stream`（SSE 串流，token 即時回傳）
+- `POST /api/grok/analyze`（結構化 JSON 分析，10 分鐘快取）
 
 請求 Body（OpenAI 兼容格式）：
 
@@ -65,7 +67,7 @@ XAI_MODEL=grok-2-latest
 
 ### 前端使用
 
-在 `index.html` 的結果面板新增了「Grok AI 分析」區塊，輸入提示詞後按下「送出給 Grok」，前端會呼叫上述代理端點並顯示回覆。
+在 `index.html` 的結果面板新增了「Grok AI 分析」區塊：可輸入 API 金鑰、選擇模板（分析師/風險/新聞/篩選）、語氣（中性/保守/進取）、並啟用串流；點擊「送出給 Grok」即可串流顯示回覆，按「取消」可中止。
 
 ### 本地測試步驟
 

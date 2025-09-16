@@ -41,12 +41,20 @@
                         <i class="fas fa-newspaper"></i>
                         市場預測
                     </button>
+                    <button id="tab-prochart" class="nav-tab" data-tab="prochart" role="tab" aria-controls="prochart-tab" aria-selected="false" tabindex="-1" data-i18n="nav.prochart">
+                        <i class="fas fa-chart-area"></i>
+                        Pro Chart
+                    </button>
                     <button id="tab-settings" class="nav-tab" data-tab="settings" role="tab" aria-controls="settings-tab" aria-selected="false" tabindex="-1" data-i18n="nav.settings">
                         <i class="fas fa-cog"></i>
                         設置
                     </button>
                 </div>
                 <div class="nav-actions">
+                    <button id="copilotToggle" class="btn btn-primary btn-sm" aria-label="Open Copilot" title="Open Copilot">
+                        <i class="fas fa-robot"></i>
+                        Copilot
+                    </button>
                     <button id="themeToggle" class="btn btn-secondary btn-sm" aria-label="Toggle theme" title="Toggle theme">
                         <i class="fas fa-moon" aria-hidden="true"></i>
                     </button>
@@ -208,9 +216,27 @@
                                 <textarea id="grokPrompt" rows="3" placeholder="輸入要讓 Grok 分析的內容，例如：請分析AAPL最近三個月走勢與風險點" style="width:100%; resize: vertical;"></textarea>
                                 <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap: wrap;">
                                     <input type="password" id="grokApiKey" placeholder="Grok API 金鑰（不會保存）" style="flex: 1 1 280px; min-width: 200px;" aria-label="Grok API Key">
+                                    <select id="grokTemplate" aria-label="Grok 模板">
+                                        <option value="analyst">分析師摘要</option>
+                                        <option value="risk">風險重點</option>
+                                        <option value="news">新聞+情緒綜合</option>
+                                        <option value="screener">條件篩選</option>
+                                    </select>
+                                    <select id="grokTone" aria-label="Grok 語氣">
+                                        <option value="neutral">中性</option>
+                                        <option value="conservative">保守</option>
+                                        <option value="aggressive">進取</option>
+                                    </select>
+                                    <label style="display:flex; align-items:center; gap:6px; font-size:12px;">
+                                        <input type="checkbox" id="grokStream" checked> 串流
+                                    </label>
                                     <button id="grokBtn" class="btn btn-primary">
                                         <i class="fas fa-robot"></i>
                                         送出給 Grok
+                                    </button>
+                                    <button id="grokCancel" class="btn btn-secondary" style="display:none;">
+                                        <i class="fas fa-stop"></i>
+                                        取消
                                     </button>
                                     <small class="help-text">每次使用請在此輸入金鑰</small>
                                 </div>
@@ -271,6 +297,47 @@
                             </tbody>
                         </table>
                     </div>
+                    <div class="dashboard-section">
+                        <h3>NL Screener</h3>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                            <input id="screenerQuery" type="text" placeholder="例如：找市值>100B、PEG<1.5、毛利率提升" style="flex:1 1 360px; min-width:260px;">
+                            <input id="screenerUniverse" type="text" placeholder="可選：逗號分隔 Universe (空白使用預設)" style="flex:1 1 320px; min-width:260px;">
+                            <input id="screenerSize" type="number" min="1" max="20" value="10" style="width:96px;">
+                            <input id="screenerGrokKey" type="password" placeholder="Grok API Key" style="flex:0 0 220px;">
+                            <button id="screenerRun" class="btn btn-primary"><i class="fas fa-filter"></i> Run</button>
+                        </div>
+                        <pre id="screenerOutput" class="code" style="white-space: pre-wrap; margin-top:8px; background:#0f172a; color:#e2e8f0; padding:8px; border-radius:6px; max-height:260px; overflow:auto;">—</pre>
+                    </div>
+                    <div class="dashboard-section">
+                        <h3>News Insights</h3>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                            <input id="newsSymbol" type="text" placeholder="例如：AAPL 或 0700.HK" style="flex:1 1 200px; min-width:200px;">
+                            <input id="newsDays" type="number" min="1" max="30" value="7" style="width:96px;">
+                            <input id="newsGrokKey" type="password" placeholder="Grok API Key" style="flex:0 0 220px;">
+                            <button id="newsRun" class="btn btn-secondary"><i class="fas fa-newspaper"></i> Run</button>
+                        </div>
+                        <div class="dashboard-section">
+                            <h3>Peers Compare</h3>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                                <input id="peersTarget" type="text" placeholder="Target: 例如 AAPL" style="flex:1 1 200px; min-width:200px;">
+                                <input id="peersList" type="text" placeholder="Peers: 逗號分隔，例如 MSFT,GOOGL,AMZN" style="flex:1 1 360px; min-width:260px;">
+                                <input id="peersGrokKey" type="password" placeholder="Grok API Key" style="flex:0 0 220px;">
+                                <button id="peersRun" class="btn btn-secondary"><i class="fas fa-users"></i> Run</button>
+                            </div>
+                            <pre id="peersOutput" class="code" style="white-space: pre-wrap; margin-top:8px; background:#0b1220; color:#e2e8f0; padding:8px; border-radius:6px; max-height:260px; overflow:auto;">—</pre>
+                        </div>
+                        <div class="dashboard-section">
+                            <h3>Portfolio Doctor</h3>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                                <input id="pfHoldings" type="text" placeholder="格式：AAPL:0.3,MSFT:0.4,TSLA:0.3" style="flex:1 1 480px; min-width:260px;">
+                                <input id="pfBudget" type="number" min="1000" value="100000" style="width:140px;">
+                                <input id="pfGrokKey" type="password" placeholder="Grok API Key" style="flex:0 0 220px;">
+                                <button id="pfRun" class="btn btn-danger"><i class="fas fa-user-md"></i> Diagnose</button>
+                            </div>
+                            <pre id="pfOutput" class="code" style="white-space: pre-wrap; margin-top:8px; background:#0f172a; color:#e2e8f0; padding:8px; border-radius:6px; max-height:260px; overflow:auto;">—</pre>
+                        </div>
+                        <pre id="newsOutput" class="code" style="white-space: pre-wrap; margin-top:8px; background:#0b1220; color:#e2e8f0; padding:8px; border-radius:6px; max-height:260px; overflow:auto;">—</pre>
+                    </div>
                 </div>
             </div>
 
@@ -287,6 +354,113 @@
                         </div>
                     </div>
                     <div id="marketDashboard" class="history-content">—</div>
+                </div>
+            </div>
+
+            <!-- Pro Chart Tab -->
+            <div id="prochart-tab" class="tab-content" role="tabpanel" aria-labelledby="tab-prochart" tabindex="0">
+                <div class="container">
+                    <div class="dashboard-header">
+                        <h2>Pro Chart</h2>
+                        <div class="dashboard-actions" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                            <input id="tvSymbol" type="text" placeholder="輸入代號，例如 AAPL 或 0700.HK" style="flex:1 1 220px; min-width:220px;">
+                            <button id="tvLoad" class="btn btn-primary"><i class="fas fa-play"></i> Load</button>
+                            <label style="display:flex; align-items:center; gap:6px; font-size:12px;"><input type="checkbox" id="tvEMA"> EMA</label>
+                            <label style="display:flex; align-items:center; gap:6px; font-size:12px;"><input type="checkbox" id="tvRSI"> RSI</label>
+                            <label style="display:flex; align-items:center; gap:6px; font-size:12px;"><input type="checkbox" id="tvMACD"> MACD</label>
+                            <input id="tvCompare" type="text" placeholder="Compare: 例如 MSFT" style="flex:0 0 180px; min-width:160px;">
+                            <button id="tvAddCompare" class="btn btn-secondary btn-sm"><i class="fas fa-plus"></i> Compare</button>
+                            <div class="btn-group" role="group" aria-label="Timeframes">
+                                <button class="btn btn-secondary btn-sm" data-tf="D">1D</button>
+                                <button class="btn btn-secondary btn-sm" data-tf="240">4H</button>
+                                <button class="btn btn-secondary btn-sm" data-tf="60">1H</button>
+                                <button class="btn btn-secondary btn-sm" data-tf="15">15m</button>
+                            </div>
+                            <div class="btn-group" role="group" aria-label="Layout">
+                                <button id="tvLayoutSingle" class="btn btn-secondary btn-sm">Single</button>
+                                <button id="tvLayoutTwo" class="btn btn-secondary btn-sm">1×2</button>
+                            </div>
+                            <div class="btn-group" role="group" aria-label="Templates" style="gap:6px; align-items:center;">
+                                <input id="tvTemplateName" type="text" placeholder="模板名" style="flex:0 0 140px; min-width:120px;">
+                                <button id="tvTemplateSave" class="btn btn-secondary btn-sm">Save Tmpl</button>
+                                <select id="tvTemplateApply" style="flex:0 0 160px; min-width:140px;"><option value="">Apply Template…</option></select>
+                            </div>
+                            <div class="btn-group" role="group" aria-label="Alerts" style="gap:6px; align-items:center;">
+                                <input id="tvAlertPrice" type="number" placeholder="到價提醒" step="0.01" style="flex:0 0 140px; min-width:120px;">
+                                <select id="tvAlertDir" style="flex:0 0 80px;">
+                                    <option value=">=">≥</option>
+                                    <option value="<=">≤</option>
+                                </select>
+                                <label style="display:flex; align-items:center; gap:6px; font-size:12px;">
+                                    <input type="checkbox" id="tvAlertSound" checked> Sound
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; font-size:12px;">
+                                    <input type="checkbox" id="tvAlertBackend"> Use Backend
+                                </label>
+                                <button id="tvAlertSet" class="btn btn-danger btn-sm">Set Alert</button>
+                            </div>
+                            <div class="btn-group" role="group" aria-label="Draw" style="gap:6px; align-items:center;">
+                                <button id="tvDrawTrend" class="btn btn-secondary btn-sm">Trend (T)</button>
+                                <button id="tvDrawHLine" class="btn btn-secondary btn-sm">HLine (H)</button>
+                                <button id="tvDrawFibo" class="btn btn-secondary btn-sm">Fibo (F)</button>
+                                <input id="tvDrawColor" type="color" value="#22d3ee" title="Color" style="width:36px; height:28px; padding:0; border:none; background:transparent;">
+                                <select id="tvDrawWidth" title="Width" style="height:28px;">
+                                    <option value="2">2px</option>
+                                    <option value="3">3px</option>
+                                    <option value="4">4px</option>
+                                </select>
+                                <button id="tvDrawClear" class="btn btn-danger btn-sm">Clear</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="tvGrid" style="display:grid; grid-template-columns: 1fr; grid-auto-rows: minmax(360px, auto); gap:8px;">
+                        <div id="tvWrap" style="position:relative; height:720px; border-radius:8px; overflow:hidden;">
+                            <div id="tvContainer" style="position:absolute; inset:0;"></div>
+                            <canvas id="tvDraw" style="position:absolute; inset:0; pointer-events:auto;"></canvas>
+                        </div>
+                        <div id="tvContainer2" style="height:360px; border-radius:8px; overflow:hidden; display:none;"></div>
+                    </div>
+                    <div class="help-text" style="margin-top:8px;">
+                        Charts powered by TradingView Advanced Chart. See features at <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView</a>.
+                    </div>
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>Alerts</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+                            <button id="tvAlertsRefresh" class="btn btn-secondary btn-sm">Refresh</button>
+                        </div>
+                        <div id="tvAlertsList" class="history-content">—</div>
+                    </div>
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>Strategy Backtest (MA Crossover)</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                            <select id="btStrategy">
+                                <option value="ma">MA Crossover</option>
+                                <option value="donchian">Breakout (Donchian)</option>
+                                <option value="meanrev">Mean Reversion</option>
+                            </select>
+                            <input id="btFast" type="number" min="1" value="10" style="width:100px;"> <span>Fast MA</span>
+                            <input id="btSlow" type="number" min="2" value="20" style="width:100px;"> <span>Slow MA</span>
+                            <input id="btCapital" type="number" value="100000" style="width:140px;"> <span>Capital</span>
+                            <input id="btFeeBps" type="number" value="5" style="width:100px;"> <span>Fee (bps)</span>
+                            <select id="btRange">
+                                <option value="1y">1y</option>
+                                <option value="2y" selected>2y</option>
+                                <option value="5y">5y</option>
+                            </select>
+                            <input id="btPresetName" type="text" placeholder="Preset 名稱" style="width:160px;">
+                            <button id="btPresetSave" class="btn btn-secondary"><i class="fas fa-save"></i> Save Preset</button>
+                            <select id="btPresetApply" style="width:180px;"><option value="">Apply Preset…</option></select>
+                            <button id="btRun" class="btn btn-primary"><i class="fas fa-play"></i> Run</button>
+                            <button id="btAddCompare" class="btn btn-secondary"><i class="fas fa-plus"></i> Add to Compare</button>
+                            <button id="btRunCompare" class="btn btn-secondary"><i class="fas fa-table"></i> Compare</button>
+                        </div>
+                        <div id="btResults" class="history-content" style="margin-top:8px;">—</div>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px;">
+                            <button id="btExportTrades" class="btn btn-secondary btn-sm"><i class="fas fa-file-csv"></i> Export Trades CSV</button>
+                            <button id="btExportReport" class="btn btn-secondary btn-sm"><i class="fas fa-file-alt"></i> Export Report (MD)</button>
+                        </div>
+                        <div id="btCompareTable" class="history-content" style="margin-top:8px;">—</div>
+                    </div>
                 </div>
             </div>
 
@@ -338,6 +512,36 @@
         </div>
     </div>
 
+    <!-- Copilot Sidebar -->
+    <aside id="copilotPanel" style="position:fixed; top:0; right:-420px; width:400px; height:100%; background:#0b1220; color:#e2e8f0; box-shadow:-2px 0 12px rgba(0,0,0,0.4); transition:right 0.25s ease; z-index:3000; display:flex; flex-direction:column;">
+        <div style="padding:12px; display:flex; align-items:center; gap:8px; border-bottom:1px solid #1f2937;">
+            <strong style="flex:1; display:flex; align-items:center; gap:8px;"><i class="fas fa-robot"></i> Copilot</strong>
+            <button id="copilotClose" class="btn btn-secondary btn-sm" aria-label="Close Copilot"><i class="fas fa-times"></i></button>
+        </div>
+        <div style="padding:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input id="copilotApiKey" type="password" placeholder="Grok API Key" style="flex:1 1 200px; min-width:200px;">
+            <select id="copilotIntent">
+                <option value="auto">Auto</option>
+                <option value="chat">Chat</option>
+                <option value="screener">Screener</option>
+                <option value="news">News</option>
+                <option value="peers">Peers</option>
+                <option value="portfolio">Portfolio</option>
+            </select>
+        </div>
+        <div style="padding:12px;">
+            <textarea id="copilotInput" rows="4" placeholder="用白話輸入你的需求，例如：幫我找 PEG < 1.2 且 5Y 毛利率上升的美股" style="width:100%; resize:vertical;"></textarea>
+            <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <button id="copilotSend" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Send</button>
+                <button id="copilotExportJson" class="btn btn-secondary btn-sm">Export JSON</button>
+                <button id="copilotExportMd" class="btn btn-secondary btn-sm">Export Markdown</button>
+            </div>
+        </div>
+        <div id="copilotHistory" style="flex:1; padding:12px; overflow:auto;">
+            <div class="help-text">尚無對話</div>
+        </div>
+    </aside>
+
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.umd.min.js"></script>
@@ -355,5 +559,7 @@
     <!-- <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script> -->
     <script src="js/app.js"></script>
+    <!-- TradingView Advanced Chart script -->
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
 </body>
 </html>
