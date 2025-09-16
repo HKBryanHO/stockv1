@@ -1479,10 +1479,7 @@ class StockPredictionApp {
 
     async fetchYahooQuote(symbol) {
         const fetchOnce = async () => {
-            const useProxy = this.shouldUseProxy();
-            const url = useProxy
-                ? `${this.backendBase}/api/yahoo/quote?symbol=${encodeURIComponent(symbol)}`
-                : `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`;
+            const url = `/api/yahoo/quote?symbol=${encodeURIComponent(symbol)}`;
             const resp = await fetch(url);
             const data = await resp.json();
             const r = data?.quoteResponse?.result?.[0] || data?.quoteResponse?.result?.[0];
@@ -1496,10 +1493,7 @@ class StockPredictionApp {
     async fetchYahooQuotesBatch(symbols) {
         const fetchOnce = async () => {
             const list = symbols.join(',');
-            const useProxy = this.shouldUseProxy();
-            const url = useProxy
-                ? `${this.backendBase}/api/yahoo/quote?symbol=${encodeURIComponent(list)}`
-                : `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(list)}`;
+            const url = `/api/yahoo/quote?symbol=${encodeURIComponent(list)}`;
             const resp = await fetch(url);
             const data = await resp.json();
             const results = data?.quoteResponse?.result || [];
@@ -1520,10 +1514,7 @@ class StockPredictionApp {
         // Cache hit
         try { const db = await this.dbPromise; if (db) { const c = await db.get('historical', key); if (c && (now - (c.ts||0) < 3600*1000)) return c.data; } } catch (_) {}
         const fetchOnce = async () => {
-            const useProxy = this.shouldUseProxy();
-            const url = useProxy
-                ? `${this.backendBase}/api/yahoo/chart?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}&interval=1d`
-                : `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${encodeURIComponent(range)}&interval=1d&events=history&includeAdjustedClose=true`;
+            const url = `/api/yahoo/chart?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}&interval=1d`;
             const resp = await fetch(url);
             const data = await resp.json();
             const r = data?.chart?.result?.[0];

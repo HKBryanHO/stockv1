@@ -1,5 +1,5 @@
 const CACHE_NAME = 'stock-app-cache-v3';
-const CORE_ASSETS = ['/', '/index.html', '/styles.css', '/js/app.js'];
+const CORE_ASSETS = ['/', '/index.html', '/styles.css', '/js/app.js', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
