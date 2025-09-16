@@ -2,8 +2,8 @@
 class StockPredictionApp {
     constructor() {
         // Deprecated Alpha Vantage proxy; keep for fallback only
-        this.apiUrl = 'http://localhost:3001/api/alphavantage';
-        this.backendBase = 'http://localhost:3001';
+        this.apiUrl = '/api/alphavantage';
+        this.backendBase = '';
         this.charts = {};
         this.sentiment = { HK: 0.60, US: 0.50 };
         this.history = new HistoryManager();
@@ -282,7 +282,7 @@ class StockPredictionApp {
             // Use backend aggregated insights if available
             const defaultSymbols = ['NVDA','PLTR','MSFT','GOOGL','9988.HK','0700.HK','AVGO','AMD','IONQ','LLY','ABBV'];
             const qs = encodeURIComponent(defaultSymbols.join(','));
-            const resp = await fetch(`http://localhost:3001/api/market/insights?symbols=${qs}`);
+            const resp = await fetch(`/api/market/insights?symbols=${qs}`);
             if (resp.ok) {
                 const data = await resp.json();
                 const seriesMap = data.series || {};
@@ -1112,7 +1112,7 @@ class StockPredictionApp {
         }
 
         try {
-            const response = await fetch(`http://localhost:3001${endpoint}`, {
+            const response = await fetch(`${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1447,7 +1447,7 @@ class StockPredictionApp {
             // Skip when running from file:// without backend
             const isFile = location.protocol === 'file:';
             if (isFile) return;
-            const response = await fetch('http://localhost:3001/api/monitor/status');
+            const response = await fetch('/api/monitor/status');
             const data = await response.json();
             
             if (data && Array.isArray(data.items)) {

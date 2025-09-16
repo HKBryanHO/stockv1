@@ -76,7 +76,7 @@ XAI_MODEL=grok-2-latest
    # 或
    npm start
    ```
-3. 在瀏覽器開啟 `http://localhost:3001/public/index.html`。
+3. 在瀏覽器開啟 `http://localhost:3001/`。
 4. 滾動到「Grok AI 分析」，輸入提示詞測試。
 
 若你自定義或企業代理不同，設定 `XAI_API_BASE` 指向你的 Chat Completions 端點即可。

@@ -4,7 +4,7 @@ import https from 'https';
 import dotenv from 'dotenv';
 import http from 'http';
 
-dotenv.config({ path: './ATT22978.env' });
+dotenv.config();
 
 const app = express();
 app.use(cors());
@@ -501,8 +501,13 @@ app.post('/api/sim/garch', (req, res) => {
   res.json(computeBandsFromCloses(closes, days, 0.9));
 });
 
-// Serve static files for convenience
-app.use(express.static('.'));
+// Serve static files from public directory
+app.use(express.static('public'));
+
+// Root route - serve index.html
+app.get('/', (req, res) => {
+  res.sendFile('index.html', { root: 'public' });
+});
 
 app.listen(PORT, () => {
   console.log(`Proxy server listening on http://localhost:${PORT}`);

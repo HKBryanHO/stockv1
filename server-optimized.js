@@ -7,7 +7,7 @@ import { createClient } from 'redis';
 import * as math from 'mathjs';
 import cron from 'node-cron';
 
-dotenv.config({ path: './ATT22978.env' });
+dotenv.config();
 
 const app = express();
 app.use(cors());
@@ -466,8 +466,13 @@ app.get('/api/health', async (req, res) => {
   res.json(health);
 });
 
-// Serve static files for convenience
-app.use(express.static('.'));
+// Serve static files from public directory
+app.use(express.static('public'));
+
+// Root route - serve index.html
+app.get('/', (req, res) => {
+  res.sendFile('index.html', { root: 'public' });
+});
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
