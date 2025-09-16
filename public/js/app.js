@@ -3,7 +3,7 @@ class StockPredictionApp {
     constructor() {
         // Deprecated Alpha Vantage proxy; keep for fallback only
         this.apiUrl = '/api/alphavantage';
-        this.backendBase = '';
+        this.backendBase = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '';
         this.charts = {};
         this.sentiment = { HK: 0.60, US: 0.50 };
         this.history = new HistoryManager();
