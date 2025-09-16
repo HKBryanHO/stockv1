@@ -3,7 +3,10 @@ class StockPredictionApp {
     constructor() {
         // Deprecated Alpha Vantage proxy; keep for fallback only
         this.apiUrl = '/api/alphavantage';
-        this.backendBase = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '';
+        // Allow overriding backend base via <meta name="backend-base" content="https://your-api.onrender.com">
+        const metaBackend = (typeof document !== 'undefined') ? document.querySelector('meta[name="backend-base"]') : null;
+        const metaVal = metaBackend && metaBackend.getAttribute('content') ? metaBackend.getAttribute('content').trim() : '';
+        this.backendBase = metaVal || ((typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '');
         this.charts = {};
         this.sentiment = { HK: 0.60, US: 0.50 };
         this.history = new HistoryManager();
@@ -708,16 +711,32 @@ class StockPredictionApp {
             const calculator = new QuantitativeCalculator();
 
             const stockData = { dates: dates, closes: closes, volumes: ts.volumes || [], opens: ts.opens || [], highs: ts.highs || [], lows: ts.lows || [] };
-            // Auto request Grok analysis with the fetched series
+            // Auto request Grok analysis with the fetched series (only if user provided a Grok key)
             try {
-                const ga = await fetch(`${this.backendBase}/api/grok/analyze`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ symbol: formData.symbol, series: { dates, closes, volumes: ts.volumes || [] } })
-                });
-                const gag = await ga.json();
-                const el = document.getElementById('grokAutoOutput');
-                if (el) el.textContent = JSON.stringify(gag.analysis || gag, null, 2);
+                const keyEl = document.getElementById('grokApiKey');
+                const userGrokKey = keyEl && keyEl.value ? keyEl.value.trim() : '';
+                if (userGrokKey) {
+                    let ga;
+                    try {
+                        ga = await fetch(`${this.backendBase}/api/grok/analyze`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey: userGrokKey, symbol: formData.symbol, series: { dates, closes, volumes: ts.volumes || [] } })
+                        });
+                    } catch (e1) {
+                        ga = await fetch(`http://localhost:3001/api/grok/analyze`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ apiKey: userGrokKey, symbol: formData.symbol, series: { dates, closes, volumes: ts.volumes || [] } })
+                        });
+                    }
+                    const gag = await ga.json();
+                    const el = document.getElementById('grokAutoOutput');
+                    if (el) el.textContent = JSON.stringify(gag.analysis || gag, null, 2);
+                } else {
+                    const el = document.getElementById('grokAutoOutput');
+                    if (el) el.textContent = '（未提供 Grok API 金鑰，已跳過自動分析）';
+                }
             } catch (_) {}
             const fundamentals = await dataFetcher.fetchFundamentals();
             const metrics = calculator.calculateMetrics(closes);
@@ -3153,6 +3172,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = document.getElementById('grokBtn');
         const promptEl = document.getElementById('grokPrompt');
         const outEl = document.getElementById('grokOutput');
+        const keyEl = document.getElementById('grokApiKey');
         if (btn && promptEl && outEl) {
             let busy = false;
             btn.addEventListener('click', async () => {
@@ -3164,24 +3184,51 @@ document.addEventListener('DOMContentLoaded', () => {
                 btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 等待 Grok 回覆...';
                 outEl.textContent = '';
                 try {
-                    const resp = await fetch('/api/grok/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            model: 'grok-2-latest',
-                            messages: [
-                                { role: 'system', content: 'You are a helpful financial analysis assistant.' },
-                                { role: 'user', content: userText }
-                            ]
-                        })
-                    });
+                    const userGrokKey = keyEl && keyEl.value ? keyEl.value.trim() : '';
+                    if (!userGrokKey) { outEl.textContent = '請先輸入 Grok API 金鑰'; throw new Error('missing_key'); }
+                    const url = `${app.backendBase}/api/grok/chat`;
+                    let resp;
+                    try {
+                        resp = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                apiKey: userGrokKey,
+                                model: 'grok-2-latest',
+                                messages: [
+                                    { role: 'system', content: 'You are a helpful financial analysis assistant.' },
+                                    { role: 'user', content: userText }
+                                ]
+                            })
+                        });
+                    } catch (e1) {
+                        // Fallback to localhost dev server
+                        const localUrl = `http://localhost:3001/api/grok/chat`;
+                        resp = await fetch(localUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                apiKey: userGrokKey,
+                                model: 'grok-2-latest',
+                                messages: [
+                                    { role: 'system', content: 'You are a helpful financial analysis assistant.' },
+                                    { role: 'user', content: userText }
+                                ]
+                            })
+                        });
+                    }
+                    if (!resp.ok) {
+                        const t = await resp.text().catch(()=> '');
+                        throw new Error(`HTTP ${resp.status} ${resp.statusText} ${t}`);
+                    }
                     const data = await resp.json();
                     const text = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content)
                         || data?.message
                         || JSON.stringify(data, null, 2);
                     outEl.textContent = text;
                 } catch (e) {
-                    outEl.textContent = '發生錯誤：' + (e && e.message ? e.message : 'unknown');
+                    outEl.textContent = '發生錯誤：' + (e && e.message ? e.message : 'unknown') + '\n' +
+                        '請確認：伺服器正在運行、可從此域名訪問 /api/grok/chat、以及金鑰正確。';
                 } finally {
                     btn.innerHTML = original;
                     busy = false;

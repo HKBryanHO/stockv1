@@ -314,8 +314,11 @@ app.get('/api/health', (req, res) => {
 // xAI Grok chat proxy (secure backend only)
 app.post('/api/grok/chat', async (req, res) => {
   try {
-    if (!XAI_API_KEY) {
-      return res.status(400).json({ error: 'XAI_API_KEY not configured on server' });
+    // Allow per-request API key via header or body
+    const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
+    const apiKeyToUse = providedKey || XAI_API_KEY;
+    if (!apiKeyToUse) {
+      return res.status(400).json({ error: 'Missing xAI API key. Provide header x-xai-api-key or body.apiKey.' });
     }
 
     // Basic input shape: { messages: [{role, content}], model?, stream? }
@@ -342,7 +345,7 @@ app.post('/api/grok/chat', async (req, res) => {
       path: urlObj.pathname + (urlObj.search || ''),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${XAI_API_KEY}`,
+        'Authorization': `Bearer ${apiKeyToUse}`,
         'Accept': 'application/json'
       }
     };
@@ -368,8 +371,11 @@ app.post('/api/grok/chat', async (req, res) => {
 // xAI Grok analysis endpoint: accept { symbol, series } and return structured insights
 app.post('/api/grok/analyze', async (req, res) => {
   try {
-    if (!XAI_API_KEY) {
-      return res.status(400).json({ error: 'XAI_API_KEY not configured on server' });
+    // Allow per-request API key via header or body
+    const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
+    const apiKeyToUse = providedKey || XAI_API_KEY;
+    if (!apiKeyToUse) {
+      return res.status(400).json({ error: 'Missing xAI API key. Provide header x-xai-api-key or body.apiKey.' });
     }
     const body = req.body || {};
     const symbol = (body.symbol || '').toString();
@@ -392,7 +398,7 @@ app.post('/api/grok/analyze', async (req, res) => {
       path: urlObj.pathname + (urlObj.search || ''),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${XAI_API_KEY}`,
+        'Authorization': `Bearer ${apiKeyToUse}`,
         'Accept': 'application/json'
       }
     };
@@ -504,8 +510,13 @@ app.post('/api/sim/garch', (req, res) => {
 // Serve static files from public directory
 app.use(express.static('public'));
 
-// Root route - serve index.html
+// Root route - serve BMA-HK homepage
 app.get('/', (req, res) => {
+  res.sendFile('home.html', { root: 'public' });
+});
+
+// Predictor subpage
+app.get('/predictor', (req, res) => {
   res.sendFile('index.html', { root: 'public' });
 });
 

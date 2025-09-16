@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>股票預測模型 - 專業版</title>
     <meta name="theme-color" content="#0a0e1a">
+    <!-- Optional: configure a different backend base when frontend and API are on different domains -->
+    <meta name="backend-base" content="">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="stylesheet" href="styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,6 +20,10 @@
         <nav class="navbar">
             <div class="nav-container">
                 <h1 class="nav-title">
+                    <a href="/" class="btn btn-secondary btn-sm" style="margin-right:8px; text-decoration:none;">
+                        <i class="fas fa-home"></i>
+                        主頁
+                    </a>
                     <i class="fas fa-chart-line"></i>
                     股票預測模型
                 </h1>
@@ -200,12 +206,13 @@
                             <div class="panel-section" style="margin-top:16px;">
                                 <h3 style="margin: 0 0 8px 0;">Grok AI 分析</h3>
                                 <textarea id="grokPrompt" rows="3" placeholder="輸入要讓 Grok 分析的內容，例如：請分析AAPL最近三個月走勢與風險點" style="width:100%; resize: vertical;"></textarea>
-                                <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+                                <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap: wrap;">
+                                    <input type="password" id="grokApiKey" placeholder="Grok API 金鑰（不會保存）" style="flex: 1 1 280px; min-width: 200px;" aria-label="Grok API Key">
                                     <button id="grokBtn" class="btn btn-primary">
                                         <i class="fas fa-robot"></i>
                                         送出給 Grok
                                     </button>
-                                    <small class="help-text">伺服器需已設定 XAI_API_KEY</small>
+                                    <small class="help-text">每次使用請在此輸入金鑰</small>
                                 </div>
                                 <pre id="grokOutput" class="code" style="white-space: pre-wrap; margin-top:8px; background:#0f172a; color:#e2e8f0; padding:8px; border-radius:6px; max-height:200px; overflow:auto;"></pre>
                                 <h4 style="margin: 12px 0 6px 0;">Grok AI 自動分析</h4>
