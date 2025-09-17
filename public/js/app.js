@@ -1618,7 +1618,16 @@ class StockPredictionApp {
             const mean = closes.reduce((a,b)=>a+b,0)/Math.max(1,closes.length);
             const std = Math.sqrt(closes.reduce((s,v)=>s+Math.pow(v-mean,2),0)/Math.max(1,closes.length));
             closes = closes.filter(v => Math.abs(v-mean) <= 3*(std||1));
-            const out = { dates, closes, volumes, opens, highs, lows };
+            let out = { dates, closes, volumes, opens, highs, lows };
+            // Resilience: if too few points after cleaning, rebuild using raw quote.close without outlier filter
+            if (!out.closes || out.closes.length < 30) {
+                try {
+                    const rawCloses = (q.close || []).map(v => Number(v)).filter(v => isFinite(v) && v > 0);
+                    if (rawCloses.length >= 10) {
+                        out = { dates, closes: rawCloses, volumes, opens, highs, lows };
+                    }
+                } catch (_) {}
+            }
             return out;
         };
         let out;
