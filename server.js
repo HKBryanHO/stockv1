@@ -18,6 +18,10 @@ const XAI_API_BASE = (process.env.XAI_API_BASE || '').trim();
 const XAI_MODEL = (process.env.XAI_MODEL || '').trim();
 const XAI_FALLBACK_API_BASE = (process.env.XAI_FALLBACK_API_BASE || '').trim();
 const XAI_FALLBACK_MODEL = (process.env.XAI_FALLBACK_MODEL || '').trim();
+// OpenRouter (LLM fallback/alternative)
+const OPENROUTER_API_KEY = (process.env.OPENROUTER_API_KEY || '').trim();
+const OPENROUTER_REFERER = (process.env.OPENROUTER_REFERER || 'https://www.bma-hk.com').trim();
+const OPENROUTER_TITLE = (process.env.OPENROUTER_TITLE || 'Stock Predictor').trim();
 const AUTH_USER = (process.env.AUTH_USER || 'admin').toString();
 const AUTH_PASS = (process.env.AUTH_PASS || process.env.AUTH_PASSWORD || '').toString();
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS || (12 * 60 * 60 * 1000));
@@ -106,6 +110,30 @@ function sanitizeMessages(messages) {
     }
     return m;
   });
+}
+
+// Provider selection (XAI vs OpenRouter). If the provided key starts with 'sk-or-', use OpenRouter.
+function chooseProvider(req, providedKey) {
+  const wantsOpenRouter = (providedKey && providedKey.startsWith('sk-or-')) || (!providedKey && OPENROUTER_API_KEY);
+  if (wantsOpenRouter) {
+    return {
+      name: 'openrouter',
+      apiKey: providedKey && providedKey.startsWith('sk-or-') ? providedKey : OPENROUTER_API_KEY,
+      baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
+      headers: {
+        'HTTP-Referer': OPENROUTER_REFERER,
+        'X-Title': OPENROUTER_TITLE
+      },
+      defaultModel: 'meta-llama/llama-3.1-8b-instruct:free'
+    };
+  }
+  return {
+    name: 'xai',
+    apiKey: providedKey || XAI_API_KEY,
+    baseUrl: XAI_API_BASE || 'https://api.x.ai/v1/chat/completions',
+    headers: {},
+    defaultModel: XAI_MODEL || 'grok-2-latest'
+  };
 }
 
 app.get('/api/metrics', (req, res) => {
@@ -442,22 +470,19 @@ app.post('/api/grok/chat', async (req, res) => {
     if (!rateLimitOk(req.ip, '/api/grok/chat')) return res.status(429).json({ error: 'rate_limited' });
     // Allow per-request API key via header or body
     const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
-    const apiKeyToUse = providedKey || XAI_API_KEY;
-    if (!apiKeyToUse) {
-      return res.status(400).json({ error: 'Missing xAI API key. Provide header x-xai-api-key or body.apiKey.' });
+    const provider = chooseProvider(req, providedKey);
+    if (!provider.apiKey) {
+      return res.status(400).json({ error: 'Missing API key. Provide header x-api-key or set OPENROUTER_API_KEY/XAI_API_KEY.' });
     }
 
     // Basic input shape: { messages: [{role, content}], model?, stream? }
     const body = req.body || {};
     const messages = sanitizeMessages(Array.isArray(body.messages) ? body.messages : []);
-    const model = (body.model || XAI_MODEL || 'grok-2-latest').toString();
+    const model = (body.model || provider.defaultModel).toString();
     const stream = Boolean(body.stream);
 
-    // Choose base; default to api.x.ai if not provided
-    const baseUrl = XAI_API_BASE || 'https://api.x.ai/v1/chat/completions';
-
-    // Support both absolute and relative configured base
-    const urlObj = new URL(baseUrl);
+    // Choose base by provider
+    const urlObj = new URL(provider.baseUrl);
 
     const requestPayload = JSON.stringify({ model, messages, stream });
 
@@ -471,12 +496,13 @@ app.post('/api/grok/chat', async (req, res) => {
       path: urlObj.pathname + (urlObj.search || ''),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKeyToUse}`,
-        'Accept': 'application/json'
+        'Authorization': `Bearer ${provider.apiKey}`,
+        'Accept': 'application/json',
+        ...provider.headers
       }
     };
 
-    const coalesceKey = `chat:${model}:${JSON.stringify(messages)}`;
+    const coalesceKey = `chat:${provider.name}:${model}:${JSON.stringify(messages)}`;
     if (grokPending.has(coalesceKey)) {
       const result = await grokPending.get(coalesceKey);
       res.setHeader('Content-Type', result.headers['content-type'] || 'application/json');
@@ -498,7 +524,7 @@ app.post('/api/grok/chat', async (req, res) => {
 
     res.setHeader('Content-Type', forward.headers['content-type'] || 'application/json');
     recordMetric('/api/grok/chat', Date.now() - start, forward.status >= 200 && forward.status < 400);
-    if (forward.status >= 500 && XAI_FALLBACK_API_BASE) {
+    if (forward.status >= 500 && provider.name === 'xai' && XAI_FALLBACK_API_BASE) {
       try {
         const fbUrl = new URL(XAI_FALLBACK_API_BASE);
         const fbOptions = { ...options, hostname: fbUrl.hostname, port: fbUrl.port || 443, path: fbUrl.pathname + (fbUrl.search || '') };
@@ -522,22 +548,21 @@ app.post('/api/grok/stream', async (req, res) => {
   try {
     if (!rateLimitOk(req.ip, '/api/grok/stream')) { res.status(429); res.write('event: error\n'); res.write('data: rate_limited\n\n'); return res.end(); }
     const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
-    const apiKeyToUse = providedKey || XAI_API_KEY;
-    if (!apiKeyToUse) {
-      return res.status(400).json({ error: 'Missing xAI API key. Provide header x-xai-api-key or body.apiKey.' });
+    const provider = chooseProvider(req, providedKey);
+    if (!provider.apiKey) {
+      return res.status(400).json({ error: 'Missing API key. Provide header x-api-key or set OPENROUTER_API_KEY/XAI_API_KEY.' });
     }
 
     const body = req.body || {};
     const messages = sanitizeMessages(Array.isArray(body.messages) ? body.messages : []);
-    const model = (body.model || XAI_MODEL || 'grok-2-latest').toString();
+    const model = (body.model || provider.defaultModel).toString();
 
     // Prepare SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
 
-    const baseUrl = XAI_API_BASE || 'https://api.x.ai/v1/chat/completions';
-    const urlObj = new URL(baseUrl);
+    const urlObj = new URL(provider.baseUrl);
     const isHttps = urlObj.protocol === 'https:';
     const lib = isHttps ? https : http;
 
@@ -548,8 +573,9 @@ app.post('/api/grok/stream', async (req, res) => {
       path: urlObj.pathname + (urlObj.search || ''),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKeyToUse}`,
-        'Accept': 'text/event-stream'
+        'Authorization': `Bearer ${provider.apiKey}`,
+        'Accept': 'text/event-stream',
+        ...provider.headers
       }
     };
 
