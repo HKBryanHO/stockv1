@@ -1494,6 +1494,10 @@ class StockPredictionApp {
         });
     }
 
+    toast(message, type = 'success', duration = 3000) {
+        this.showToast(message, type, duration);
+    }
+
     showToast(message, type = 'success', duration = 3000) {
         const toast = document.getElementById('toast');
         
@@ -3296,7 +3300,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btn && promptEl && outEl) {
             let busy = false;
             let currentAbort = null;
-            let grokModel = 'grok-2-latest';
+            let grokModel = 'meta-llama/llama-3.1-8b-instruct:free';
             // Fetch backend Grok config once
             (async () => {
                 try {
@@ -3313,7 +3317,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         return 'meta-llama/llama-3.1-8b-instruct:free';
                     }
                 } catch(_) {}
-                return grokModel || 'grok-2-latest';
+                return grokModel || 'meta-llama/llama-3.1-8b-instruct:free';
             };
             const composeMessages = (userText) => {
                 const template = (tplEl && tplEl.value) || 'analyst';
@@ -3407,8 +3411,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         outEl.textContent = text;
                     }
                 } catch (e) {
+                    console.error('AI chat error:', e);
                     outEl.textContent = '發生錯誤：' + (e && e.message ? e.message : 'unknown') + '\n' +
-                        '請確認：伺服器正在運行、可從此域名訪問 /api/grok/chat、以及金鑰正確。';
+                        '請確認：伺服器正在運行、可從此域名訪問 /api/grok/chat、以及後端已設定 API 金鑰。';
                 } finally {
                     btn.innerHTML = original;
                     if (cancelEl) cancelEl.style.display = 'none';
@@ -3513,8 +3518,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         sendBtn && sendBtn.addEventListener('click', async () => {
             const q = (inputEl && inputEl.value || '').trim();
-            const apiKey = (apiKeyEl && apiKeyEl.value || '').trim();
-            if (!q) return; if (!apiKey) { app.toast('請提供 Grok API Key'); return; }
+            const apiKey = (apiKeyEl && apiKeyEl.value || '').trim(); // optional with backend key
+            if (!q) return;
             const ts = Date.now();
             try {
                 const a = await routeCopilot(q, apiKey);

@@ -234,10 +234,10 @@
                                         <i class="fas fa-stop"></i>
                                         取消
                                     </button>
-                                    <small class="help-text">每次使用請在此輸入金鑰</small>
+                                    <small class="help-text">可留空使用後端金鑰</small>
                                 </div>
                                 <pre id="grokOutput" class="code" style="white-space: pre-wrap; margin-top:8px; background:#0f172a; color:#e2e8f0; padding:8px; border-radius:6px; max-height:200px; overflow:auto;"></pre>
-                                <h4 style="margin: 12px 0 6px 0;">Grok AI 自動分析</h4>
+                                <h4 style="margin: 12px 0 6px 0;">AI 自動分析</h4>
                                 <pre id="grokAutoOutput" class="code" style="white-space: pre-wrap; margin-top:4px; background:#0b1220; color:#e2e8f0; padding:8px; border-radius:6px; max-height:200px; overflow:auto;"></pre>
                             </div>
                         </div>
@@ -299,7 +299,7 @@
                             <input id="screenerQuery" type="text" placeholder="例如：找市值>100B、PEG<1.5、毛利率提升" style="flex:1 1 360px; min-width:260px;">
                             <input id="screenerUniverse" type="text" placeholder="可選：逗號分隔 Universe (空白使用預設)" style="flex:1 1 320px; min-width:260px;">
                             <input id="screenerSize" type="number" min="1" max="20" value="10" style="width:96px;">
-                            <input id="screenerGrokKey" type="password" placeholder="Grok API Key" style="flex:0 0 220px;">
+                            <input id="screenerGrokKey" type="password" placeholder="API Key（可留空）" style="flex:0 0 220px;">
                             <button id="screenerRun" class="btn btn-primary"><i class="fas fa-filter"></i> Run</button>
                         </div>
                         <pre id="screenerOutput" class="code" style="white-space: pre-wrap; margin-top:8px; background:#0f172a; color:#e2e8f0; padding:8px; border-radius:6px; max-height:260px; overflow:auto;">—</pre>
@@ -309,7 +309,7 @@
                         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                             <input id="newsSymbol" type="text" placeholder="例如：AAPL 或 0700.HK" style="flex:1 1 200px; min-width:200px;">
                             <input id="newsDays" type="number" min="1" max="30" value="7" style="width:96px;">
-                            <input id="newsGrokKey" type="password" placeholder="Grok API Key" style="flex:0 0 220px;">
+                            <input id="newsGrokKey" type="password" placeholder="API Key（可留空）" style="flex:0 0 220px;">
                             <button id="newsRun" class="btn btn-secondary"><i class="fas fa-newspaper"></i> Run</button>
                         </div>
                         <div class="dashboard-section">
@@ -317,7 +317,7 @@
                             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                                 <input id="peersTarget" type="text" placeholder="Target: 例如 AAPL" style="flex:1 1 200px; min-width:200px;">
                                 <input id="peersList" type="text" placeholder="Peers: 逗號分隔，例如 MSFT,GOOGL,AMZN" style="flex:1 1 360px; min-width:260px;">
-                                <input id="peersGrokKey" type="password" placeholder="Grok API Key" style="flex:0 0 220px;">
+                                <input id="peersGrokKey" type="password" placeholder="API Key（可留空）" style="flex:0 0 220px;">
                                 <button id="peersRun" class="btn btn-secondary"><i class="fas fa-users"></i> Run</button>
                             </div>
                             <pre id="peersOutput" class="code" style="white-space: pre-wrap; margin-top:8px; background:#0b1220; color:#e2e8f0; padding:8px; border-radius:6px; max-height:260px; overflow:auto;">—</pre>
@@ -327,7 +327,7 @@
                             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                                 <input id="pfHoldings" type="text" placeholder="格式：AAPL:0.3,MSFT:0.4,TSLA:0.3" style="flex:1 1 480px; min-width:260px;">
                                 <input id="pfBudget" type="number" min="1000" value="100000" style="width:140px;">
-                                <input id="pfGrokKey" type="password" placeholder="Grok API Key" style="flex:0 0 220px;">
+                                <input id="pfGrokKey" type="password" placeholder="API Key（可留空）" style="flex:0 0 220px;">
                                 <button id="pfRun" class="btn btn-danger"><i class="fas fa-user-md"></i> Diagnose</button>
                             </div>
                             <pre id="pfOutput" class="code" style="white-space: pre-wrap; margin-top:8px; background:#0f172a; color:#e2e8f0; padding:8px; border-radius:6px; max-height:260px; overflow:auto;">—</pre>
@@ -515,7 +515,7 @@
             <button id="copilotClose" class="btn btn-secondary btn-sm" aria-label="Close Copilot"><i class="fas fa-times"></i></button>
         </div>
         <div style="padding:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <input id="copilotApiKey" type="password" placeholder="Grok API Key" style="flex:1 1 200px; min-width:200px;">
+                            <input id="copilotApiKey" type="password" placeholder="API Key（可留空）" style="flex:1 1 200px; min-width:200px;">
             <select id="copilotIntent">
                 <option value="auto">Auto</option>
                 <option value="chat">Chat</option>
@@ -540,15 +540,15 @@
 
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mathjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prophetjs@1.1.2/dist/prophet.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/idb@7/build/iife/index-min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/finnhub-js@1.2.14/dist/finnhub.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.umd.min.js" onerror="console.warn('chartjs-plugin-zoom failed to load')"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjs" onerror="console.warn('mathjs failed to load')"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js" onerror="console.warn('tensorflow failed to load')"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prophetjs@1.1.2/dist/prophet.min.js" onerror="console.warn('prophetjs failed to load')"></script>
+    <script src="https://cdn.jsdelivr.net/npm/idb@7/build/iife/index-min.js" onerror="console.warn('idb failed to load')"></script>
+    <script src="https://cdn.jsdelivr.net/npm/finnhub-js@1.2.14/dist/finnhub.min.js" onerror="console.warn('finnhub failed to load')"></script>
     <!-- Optional libs disabled for file:// to reduce console noise -->
     <!-- <script src="https://js.pusher.com/8.4/pusher.min.js"></script> -->
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@3.3.0/dist/chartjs-chart-financial.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@3.3.0/dist/chartjs-chart-financial.min.js" onerror="console.warn('chartjs-chart-financial failed to load')"></script>
     <!-- <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script> -->

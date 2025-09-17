@@ -446,7 +446,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// xAI Grok config (model/base) for frontend awareness
+// LLM config (model/base) for frontend awareness
 app.get('/api/grok/config', (req, res) => {
   try {
     const providedKey = ((req.headers['x-api-key'] || '') + '').trim();
@@ -461,7 +461,7 @@ app.get('/api/grok/config', (req, res) => {
   }
 });
 
-// xAI Grok chat proxy (secure backend only)
+// OpenRouter LLM chat proxy (secure backend only)
 app.post('/api/grok/chat', async (req, res) => {
   try {
     const start = Date.now();
@@ -522,26 +522,14 @@ app.post('/api/grok/chat', async (req, res) => {
 
     res.setHeader('Content-Type', forward.headers['content-type'] || 'application/json');
     recordMetric('/api/grok/chat', Date.now() - start, forward.status >= 200 && forward.status < 400);
-    if (forward.status >= 500 && provider.name === 'xai' && XAI_FALLBACK_API_BASE) {
-      try {
-        const fbUrl = new URL(XAI_FALLBACK_API_BASE);
-        const fbOptions = { ...options, hostname: fbUrl.hostname, port: fbUrl.port || 443, path: fbUrl.pathname + (fbUrl.search || '') };
-        const fbBody = JSON.stringify({ ...JSON.parse(requestPayload), model: (XAI_FALLBACK_MODEL || model) });
-        const fb = await new Promise((resolve, reject) => {
-          const rq = (fbUrl.protocol === 'https:' ? https : http).request(fbOptions, (r) => { let d=''; r.on('data', c=>d+=c); r.on('end', ()=> resolve({ status:r.statusCode||500, body:d, headers:r.headers })); });
-          rq.on('error', reject); rq.write(fbBody); rq.end();
-        });
-        res.setHeader('Content-Type', fb.headers['content-type'] || 'application/json');
-        return res.status(fb.status).send(fb.body);
-      } catch (_) {}
-    }
+    // OpenRouter-only setup; no fallback needed
     return res.status(forward.status).send(forward.body);
   } catch (e) {
-    return res.status(500).json({ error: e && e.message ? e.message : 'grok_proxy_error' });
+    return res.status(500).json({ error: e && e.message ? e.message : 'llm_proxy_error' });
   }
 });
 
-// xAI Grok streaming endpoint (SSE): transforms provider stream into plain text tokens
+// OpenRouter LLM streaming endpoint (SSE): transforms provider stream into plain text tokens
 app.post('/api/grok/stream', async (req, res) => {
   try {
     if (!rateLimitOk(req.ip, '/api/grok/stream')) { res.status(429); res.write('event: error\n'); res.write('data: rate_limited\n\n'); return res.end(); }
@@ -648,14 +636,14 @@ app.post('/api/grok/stream', async (req, res) => {
   } catch (e) {
     try {
       res.write('event: error\n');
-      res.write(`data: ${e && e.message ? e.message : 'grok_stream_error'}\n\n`);
+      res.write(`data: ${e && e.message ? e.message : 'llm_stream_error'}\n\n`);
     } finally {
       res.end();
     }
   }
 });
 
-// xAI Grok analysis endpoint: accept { symbol, series } and return structured insights
+// OpenRouter LLM analysis endpoint: accept { symbol, series } and return structured insights
 app.post('/api/grok/analyze', async (req, res) => {
   try {
     // Allow per-request API key via header or body
@@ -668,7 +656,7 @@ app.post('/api/grok/analyze', async (req, res) => {
     const symbol = (body.symbol || '').toString();
     const series = body.series || {}; // { dates:[], closes:[], volumes:[] }
     // Simple 10-minute cache keyed by symbol + model + length + last values
-    const modelForAnalyze = XAI_MODEL || 'grok-2-latest';
+    const modelForAnalyze = 'meta-llama/llama-3.1-8b-instruct:free';
     const closes = Array.isArray(series.closes) ? series.closes : [];
     const dates = Array.isArray(series.dates) ? series.dates : [];
     const cacheKey = `grok:analyze:${modelForAnalyze}:${symbol}:${closes.length}:${dates.length}:${closes.slice(-5).join(',')}:${(dates.slice(-2)||[]).join(',')}`;
@@ -725,7 +713,7 @@ app.post('/api/grok/analyze', async (req, res) => {
       return res.status(response.status).send(response.body);
     }
   } catch (e) {
-    return res.status(500).json({ error: e && e.message ? e.message : 'grok_analyze_error' });
+    return res.status(500).json({ error: e && e.message ? e.message : 'llm_analyze_error' });
   }
 });
 
@@ -746,7 +734,7 @@ app.post('/api/grok/screener', async (req, res) => {
       universe = ['NVDA','MSFT','AAPL','AMZN','GOOGL','META','TSLA','AMD','AVGO','ORCL','LLY','ABBV','NFLX','CRM','INTC','ADBE','SHOP','BABA','0700.HK','9988.HK'];
     }
 
-    const modelId = XAI_MODEL || 'grok-2-latest';
+    const modelId = 'meta-llama/llama-3.1-8b-instruct:free';
     const cacheKey = `grok:screener:${modelId}:${nlQuery}:${universe.join(',')}:${size}`;
     const nowTs = Date.now();
     const ttlMs = 10 * 60 * 1000;
@@ -792,7 +780,7 @@ app.post('/api/grok/screener', async (req, res) => {
     const metrics = await Promise.all(universe.map(fetchQuote));
     const dataset = metrics.filter(m => m && m.ok).map(({ ok, ...rest }) => rest);
 
-    // Compose prompt for Grok
+    // Compose prompt for LLM screener
     const instruction = `You are a senior equity screener. Given a user natural-language screening request and a dataset of symbols with metrics, select up to ${size} symbols that best match. Return strict JSON: { criteria_explained: string, selected: string[], reasons: { [symbol]: string }, risks?: string[] }`;
     const messages = [
       { role: 'system', content: instruction },
@@ -841,11 +829,11 @@ app.post('/api/grok/screener', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).send(outStr);
   } catch (e) {
-    return res.status(500).json({ error: e && e.message ? e.message : 'grok_screener_error' });
+    return res.status(500).json({ error: e && e.message ? e.message : 'llm_screener_error' });
   }
 });
 
-// News insights TL;DR via Grok: { apiKey, symbol, lookbackDays? }
+// News insights TL;DR via OpenRouter LLM: { apiKey, symbol, lookbackDays? }
 app.post('/api/grok/news-insights', async (req, res) => {
   try {
     const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
@@ -856,7 +844,7 @@ app.post('/api/grok/news-insights', async (req, res) => {
     if (!symbol) return res.status(400).json({ error: 'symbol required' });
     const lookbackDays = Math.min(30, Math.max(1, Number(body.lookbackDays || 7)));
 
-    const modelId = XAI_MODEL || 'grok-2-latest';
+    const modelId = 'meta-llama/llama-3.1-8b-instruct:free';
     const cacheKey = `grok:news:${modelId}:${symbol}:${lookbackDays}`;
     const nowTs = Date.now();
     const ttlMs = 10 * 60 * 1000;
@@ -891,7 +879,7 @@ app.post('/api/grok/news-insights', async (req, res) => {
     const total = pos + neg;
     const score = total > 0 ? Math.max(-1, Math.min(1, (pos - neg) / total)) : 0;
 
-    // Ask Grok for TL;DR
+    // Ask OpenRouter LLM for TL;DR
     const instruction = 'You are a financial news analyst. Given recent headlines for a stock, produce a concise TL;DR with 3 bullets, top risks (<=3), and near-term catalysts (<=3). Return strict JSON: { tldr: string[], risks: string[], catalysts: string[], stance: "positive"|"neutral"|"negative" }';
     const messages = [
       { role: 'system', content: instruction },
@@ -939,7 +927,7 @@ app.post('/api/grok/news-insights', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).send(outStr);
   } catch (e) {
-    return res.status(500).json({ error: e && e.message ? e.message : 'grok_news_error' });
+    return res.status(500).json({ error: e && e.message ? e.message : 'llm_news_error' });
   }
 });
 
@@ -959,7 +947,7 @@ app.post('/api/grok/peers-compare', async (req, res) => {
     }
     const universe = [symbol, ...peers];
 
-    const modelId = XAI_MODEL || 'grok-2-latest';
+    const modelId = 'meta-llama/llama-3.1-8b-instruct:free';
     const cacheKey = `grok:peers:${modelId}:${universe.join(',')}`;
     const cached = cache.get(cacheKey);
     const nowTs = Date.now();
@@ -1050,7 +1038,7 @@ app.post('/api/grok/peers-compare', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).send(outStr);
   } catch (e) {
-    return res.status(500).json({ error: e && e.message ? e.message : 'grok_peers_error' });
+    return res.status(500).json({ error: e && e.message ? e.message : 'llm_peers_error' });
   }
 });
 
@@ -1065,7 +1053,7 @@ app.post('/api/grok/portfolio-doctor', async (req, res) => {
     if (!holdings.length) return res.status(400).json({ error: 'holdings required' });
     const budget = Number(body.budget || 100000);
 
-    const modelId = XAI_MODEL || 'grok-2-latest';
+    const modelId = 'meta-llama/llama-3.1-8b-instruct:free';
     const cacheKey = `grok:portfolio:${modelId}:${holdings.map(h=>`${h.symbol}:${h.weight}`).join('|')}:${budget}`;
     const cached = cache.get(cacheKey);
     const nowTs = Date.now();
@@ -1151,7 +1139,7 @@ app.post('/api/grok/portfolio-doctor', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).send(outStr);
   } catch (e) {
-    return res.status(500).json({ error: e && e.message ? e.message : 'grok_portfolio_error' });
+    return res.status(500).json({ error: e && e.message ? e.message : 'llm_portfolio_error' });
   }
 });
 
