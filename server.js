@@ -13,11 +13,12 @@ app.use(express.json({ limit: '1mb' }));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 const ALPHA_KEY = process.env.ALPHA_VANTAGE_KEY || '';
-const XAI_API_KEY = process.env.XAI_API_KEY || '';
-const XAI_API_BASE = (process.env.XAI_API_BASE || '').trim();
-const XAI_MODEL = (process.env.XAI_MODEL || '').trim();
-const XAI_FALLBACK_API_BASE = (process.env.XAI_FALLBACK_API_BASE || '').trim();
-const XAI_FALLBACK_MODEL = (process.env.XAI_FALLBACK_MODEL || '').trim();
+// Deprecated xAI config removed in favor of OpenRouter-only
+const XAI_API_KEY = '';
+const XAI_API_BASE = '';
+const XAI_MODEL = '';
+const XAI_FALLBACK_API_BASE = '';
+const XAI_FALLBACK_MODEL = '';
 // OpenRouter (LLM fallback/alternative)
 const OPENROUTER_API_KEY = (process.env.OPENROUTER_API_KEY || '').trim();
 const OPENROUTER_REFERER = (process.env.OPENROUTER_REFERER || 'https://www.bma-hk.com').trim();
@@ -114,25 +115,15 @@ function sanitizeMessages(messages) {
 
 // Provider selection (XAI vs OpenRouter). If the provided key starts with 'sk-or-', use OpenRouter.
 function chooseProvider(req, providedKey) {
-  const wantsOpenRouter = (providedKey && providedKey.startsWith('sk-or-')) || (!providedKey && OPENROUTER_API_KEY);
-  if (wantsOpenRouter) {
-    return {
-      name: 'openrouter',
-      apiKey: providedKey && providedKey.startsWith('sk-or-') ? providedKey : OPENROUTER_API_KEY,
-      baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
-      headers: {
-        'HTTP-Referer': OPENROUTER_REFERER,
-        'X-Title': OPENROUTER_TITLE
-      },
-      defaultModel: 'meta-llama/llama-3.1-8b-instruct:free'
-    };
-  }
   return {
-    name: 'xai',
-    apiKey: providedKey || XAI_API_KEY,
-    baseUrl: XAI_API_BASE || 'https://api.x.ai/v1/chat/completions',
-    headers: {},
-    defaultModel: XAI_MODEL || 'grok-2-latest'
+    name: 'openrouter',
+    apiKey: (providedKey && providedKey.trim()) || OPENROUTER_API_KEY,
+    baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
+    headers: {
+      'HTTP-Referer': OPENROUTER_REFERER,
+      'X-Title': OPENROUTER_TITLE
+    },
+    defaultModel: 'meta-llama/llama-3.1-8b-instruct:free'
   };
 }
 
@@ -457,10 +448,17 @@ app.get('/api/health', (req, res) => {
 
 // xAI Grok config (model/base) for frontend awareness
 app.get('/api/grok/config', (req, res) => {
-  res.json({
-    model: XAI_MODEL || 'grok-2-latest',
-    base: XAI_API_BASE || 'https://api.x.ai/v1/chat/completions'
-  });
+  try {
+    const providedKey = ((req.headers['x-api-key'] || '') + '').trim();
+    const provider = chooseProvider(req, providedKey);
+    return res.json({
+      model: provider.defaultModel,
+      base: provider.baseUrl,
+      provider: provider.name
+    });
+  } catch (_) {
+    res.json({ model: 'meta-llama/llama-3.1-8b-instruct:free', base: 'https://openrouter.ai/api/v1/chat/completions', provider: 'openrouter' });
+  }
 });
 
 // xAI Grok chat proxy (secure backend only)

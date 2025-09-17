@@ -3298,7 +3298,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let currentAbort = null;
             let grokModel = 'grok-2-latest';
             // Fetch backend Grok config once
-        (async () => {
+            (async () => {
                 try {
                     const cfgResp = await fetch(`${app.backendBase}/api/grok/config`).catch(()=>null);
                     if (cfgResp && cfgResp.ok) {
@@ -3307,6 +3307,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } catch (_) {}
             })();
+            const chooseLLMModel = (key) => {
+                try {
+                    if (key && key.trim().toLowerCase().startsWith('sk-or-')) {
+                        return 'meta-llama/llama-3.1-8b-instruct:free';
+                    }
+                } catch(_) {}
+                return grokModel || 'grok-2-latest';
+            };
             const composeMessages = (userText) => {
                 const template = (tplEl && tplEl.value) || 'analyst';
                 const tone = (toneEl && toneEl.value) || 'neutral';
@@ -3337,7 +3345,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 outEl.textContent = '';
                 try {
                     const userGrokKey = keyEl && keyEl.value ? keyEl.value.trim() : '';
-                    if (!userGrokKey) { outEl.textContent = '請先輸入 Grok API 金鑰'; throw new Error('missing_key'); }
+                    // Key is optional for OpenRouter if server has env key
                     const useStream = !!(streamEl && streamEl.checked);
                     const messages = composeMessages(userText);
                     if (useStream) {
@@ -3346,7 +3354,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             const init = {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ apiKey: userGrokKey, model: grokModel, messages })
+                                body: JSON.stringify({ apiKey: userGrokKey, model: chooseLLMModel(userGrokKey), messages })
                             };
                             const resp = await fetch(streamUrl, init);
                             if (!resp.ok || !resp.body) {
@@ -3380,7 +3388,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             const chatUrl = `${app.backendBase}/api/grok/chat`;
                             const resp = await fetch(chatUrl, {
                                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ apiKey: userGrokKey, model: grokModel, messages })
+                                body: JSON.stringify({ apiKey: userGrokKey, model: chooseLLMModel(userGrokKey), messages })
                             });
                             const data = await resp.json();
                             const text = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content)
@@ -3391,7 +3399,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const chatUrl = `${app.backendBase}/api/grok/chat`;
                         const resp = await fetch(chatUrl, {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ apiKey: userGrokKey, model: grokModel, messages })
+                            body: JSON.stringify({ apiKey: userGrokKey, model: chooseLLMModel(userGrokKey), messages })
                         });
                         const data = await resp.json();
                         const text = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content)
@@ -3477,7 +3485,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const useIntent = intent === 'auto' ? (lower.includes('peer') ? 'peers' : lower.includes('news') ? 'news' : lower.includes('peg') || lower.includes('market cap') ? 'screener' : lower.includes('portfolio') ? 'portfolio' : 'chat') : intent;
             const systemPrompt = copilotLang === 'en' ? 'You are a helpful financial assistant.' : '你是一位專業且簡潔的財經助理。';
             if (useIntent === 'chat') {
-                const resp = await fetch(`${app.backendBase}/api/grok/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, model: 'grok-2-latest', messages: [{ role:'system', content: systemPrompt }, { role:'user', content:q }] }) });
+                const resp = await fetch(`${app.backendBase}/api/grok/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, model: 'meta-llama/llama-3.1-8b-instruct:free', messages: [{ role:'system', content: systemPrompt }, { role:'user', content:q }] }) });
                 const j = await resp.json();
                 const text = j?.choices?.[0]?.message?.content || JSON.stringify(j);
                 return text;

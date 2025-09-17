@@ -208,17 +208,17 @@
                             <button id="exportExcelBtn" class="btn" style="display: none; background:#16a34a; color:#fff; margin-left:8px;">Export Excel</button>
                             <button id="debugBtn" class="btn btn-secondary" style="display:none; margin-left:8px;">Debug Data</button>
                             <div class="panel-section" style="margin-top:16px;">
-                                <h3 style="margin: 0 0 8px 0;">Grok AI 分析</h3>
-                                <textarea id="grokPrompt" rows="3" placeholder="輸入要讓 Grok 分析的內容，例如：請分析AAPL最近三個月走勢與風險點" style="width:100%; resize: vertical;"></textarea>
+                                <h3 style="margin: 0 0 8px 0;">AI 分析（OpenRouter）</h3>
+                                <textarea id="grokPrompt" rows="3" placeholder="輸入要讓 AI 分析的內容，例如：請分析AAPL最近三個月走勢與風險點" style="width:100%; resize: vertical;"></textarea>
                                 <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap: wrap;">
-                                    <input type="password" id="grokApiKey" placeholder="Grok API 金鑰（不會保存）" style="flex: 1 1 280px; min-width: 200px;" aria-label="Grok API Key">
-                                    <select id="grokTemplate" aria-label="Grok 模板">
+                                    <input type="password" id="grokApiKey" placeholder="OpenRouter API 金鑰（可留空，不會保存）" style="flex: 1 1 280px; min-width: 200px;" aria-label="OpenRouter API Key">
+                                    <select id="grokTemplate" aria-label="AI 模板">
                                         <option value="analyst">分析師摘要</option>
                                         <option value="risk">風險重點</option>
                                         <option value="news">新聞+情緒綜合</option>
                                         <option value="screener">條件篩選</option>
                                     </select>
-                                    <select id="grokTone" aria-label="Grok 語氣">
+                                    <select id="grokTone" aria-label="AI 語氣">
                                         <option value="neutral">中性</option>
                                         <option value="conservative">保守</option>
                                         <option value="aggressive">進取</option>
@@ -228,7 +228,7 @@
                                     </label>
                                     <button id="grokBtn" class="btn btn-primary">
                                         <i class="fas fa-robot"></i>
-                                        送出給 Grok
+                                        送出
                                     </button>
                                     <button id="grokCancel" class="btn btn-secondary" style="display:none;">
                                         <i class="fas fa-stop"></i>
