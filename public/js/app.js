@@ -1,12 +1,21 @@
 // Stock Prediction App - Modern JavaScript Architecture (Frontend-Only Version)
 class StockPredictionApp {
     constructor() {
-        // Deprecated Alpha Vantage proxy; keep for fallback only
-        this.apiUrl = '/api/alphavantage';
         // Allow overriding backend base via <meta name="backend-base" content="https://your-api.onrender.com">
         const metaBackend = (typeof document !== 'undefined') ? document.querySelector('meta[name="backend-base"]') : null;
         const metaVal = metaBackend && metaBackend.getAttribute('content') ? metaBackend.getAttribute('content').trim() : '';
-        this.backendBase = metaVal || ((typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '');
+        this.backendBase = (function() {
+            if (metaVal) return metaVal;
+            try {
+                const host = (window.location && window.location.hostname) || '';
+                if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+                    return window.location.origin;
+                }
+            } catch(_) {}
+            return 'https://your-api.onrender.com';
+        })();
+        // Alpha Vantage proxy base (backend only; no frontend key)
+        this.apiUrl = `${this.backendBase}/api/alphavantage`;
         this.charts = {};
         this.sentiment = { HK: 0.60, US: 0.50 };
         this.history = new HistoryManager();
@@ -47,8 +56,44 @@ class StockPredictionApp {
         window.addEventListener('online', warn);
         window.addEventListener('offline', warn);
         warn();
+        // PWA install prompt handler
+        this.initPWAInstall();
         // Live ticker initial
         this.updateTickerBar({});
+    }
+
+    initPWAInstall() {
+        try {
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                this._deferredPrompt = e;
+                let btn = document.getElementById('installBtn');
+                if (!btn) {
+                    const nav = document.querySelector('.nav-actions');
+                    if (nav) {
+                        btn = document.createElement('button');
+                        btn.id = 'installBtn';
+                        btn.className = 'btn btn-secondary btn-sm';
+                        btn.style.display = '';
+                        btn.innerHTML = '<i class="fas fa-download"></i> Install';
+                        nav.appendChild(btn);
+                    }
+                }
+                if (btn && !btn._bound) {
+                    btn._bound = true;
+                    btn.addEventListener('click', async () => {
+                        try {
+                            if (!this._deferredPrompt) return;
+                            this._deferredPrompt.prompt();
+                            const choice = await this._deferredPrompt.userChoice;
+                            console.log('PWA install outcome:', choice && choice.outcome);
+                            this._deferredPrompt = null;
+                            btn.style.display = 'none';
+                        } catch (err) { console.log('PWA install error', err); }
+                    });
+                }
+            });
+        } catch (_) {}
     }
 
     async initDB() {
@@ -285,7 +330,7 @@ class StockPredictionApp {
             // Use backend aggregated insights if available
             const defaultSymbols = ['NVDA','PLTR','MSFT','GOOGL','9988.HK','0700.HK','AVGO','AMD','IONQ','LLY','ABBV'];
             const qs = encodeURIComponent(defaultSymbols.join(','));
-            const resp = await fetch(`/api/market/insights?symbols=${qs}`);
+            const resp = await fetch(`${this.backendBase}/api/market/insights?symbols=${qs}`);
             if (resp.ok) {
                 const data = await resp.json();
                 const seriesMap = data.series || {};
@@ -1036,7 +1081,6 @@ class StockPredictionApp {
 
     getFormData() {
         return {
-            apiKey: document.getElementById('apiKey').value.trim(),
             market: document.getElementById('market').value,
             symbol: document.getElementById('stockSymbol').value.trim().toUpperCase(),
             amount: parseFloat(document.getElementById('investmentAmount').value),
@@ -1106,7 +1150,7 @@ class StockPredictionApp {
         if (!stockData || !Array.isArray(stockData.closes) || stockData.closes.length === 0) {
             throw new Error('Data fetch failed, try again');
         }
-        const fundamentals = await dataFetcher.fetchFundamentals(formData.symbol, formData.apiKey);
+        const fundamentals = await dataFetcher.fetchFundamentals(formData.symbol);
         const metrics = calculator.calculateMetrics(stockData.closes);
         const technical = calculator.calculateTechnical(stockData.closes);
         const sentiment = this.calculateSentiment(stockData.closes, technical, formData.market);
@@ -1137,42 +1181,48 @@ class StockPredictionApp {
 
     async runAdvancedSimulation(closes, formData, metrics) {
         const modelEndpoints = {
-            'JUMP': '/api/sim/jump',
-            'HESTON': '/api/sim/heston',
-            'GARCH': '/api/sim/garch'
+            'JUMP': `${this.backendBase}/api/sim/jump`,
+            'HESTON': `${this.backendBase}/api/sim/heston`,
+            'GARCH': `${this.backendBase}/api/sim/garch`
         };
 
         const endpoint = modelEndpoints[formData.model];
-        if (!endpoint) {
-            throw new Error('Invalid model selected');
+        const last = closes[closes.length - 1];
+        const paths = Math.min(formData.paths, 8000);
+        // Try backend first
+        if (endpoint) {
+            try {
+                const response = await fetch(`${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ closes, days: formData.days, paths })
+                });
+                if (response.ok) {
+                    const result = await response.json();
+                    if (!result.error && (result.quantiles || result.paths)) {
+                        if (Array.isArray(result.paths)) {
+                            return { paths: result.paths, quantiles: (new MonteCarloSimulator()).calculateQuantiles(result.paths) };
+                        }
+                        return { paths: [], quantiles: result };
+                    }
+                }
+            } catch (_) { /* fall through to local */ }
         }
-
-        try {
-            const response = await fetch(`${endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    closes: closes,
-                    days: formData.days,
-                    paths: Math.min(formData.paths, 8000)
-                })
-            });
-
-            const result = await response.json();
-            if (result.error) {
-                throw new Error(result.error);
-            }
-
-            return {
-                paths: [],
-                quantiles: result,
-                model: result.model,
-                parameters: result.parameters
-            };
-        } catch (error) {
-            console.warn('Advanced simulation failed, falling back to GBM:', error);
-            return this.runGBMSimulation(closes, formData, metrics);
+        // Local fallbacks
+        const sim = new MonteCarloSimulator();
+        if (formData.model === 'JUMP') {
+            return sim.simulateJumpDiffusion(last, metrics.mu || 0.05, metrics.sigma || 0.2, formData.days, paths, { lambda: 0.2, kappa: -0.08, delta: 0.25 });
         }
+        if (formData.model === 'HESTON') {
+            const v0 = Math.max(1e-6, Math.pow((metrics.garchSigmaDaily || metrics.sigmaDaily || 0.02), 2));
+            const kappa = 2.0, theta = v0, xi = 0.5, rho = -0.6;
+            return sim.simulateHeston(last, metrics.mu || 0.05, v0, kappa, theta, xi, rho, formData.days, paths);
+        }
+        if (formData.model === 'GARCH') {
+            const sigma0 = metrics.garchSigmaDaily || metrics.sigmaDaily || 0.02;
+            return sim.simulateGARCH(last, metrics.mu || 0.05, formData.days, paths, 0.00005, 0.08, 0.9, sigma0);
+        }
+        return this.runGBMSimulation(closes, formData, metrics);
     }
 
     calculateSentiment(closes, technical, market) {
@@ -1483,7 +1533,7 @@ class StockPredictionApp {
             // Skip when running from file:// without backend
             const isFile = location.protocol === 'file:';
             if (isFile) return;
-            const response = await fetch('/api/monitor/status');
+            const response = await fetch(`${this.backendBase}/api/monitor/status`);
             const data = await response.json();
             
             if (data && Array.isArray(data.items)) {
@@ -1515,8 +1565,8 @@ class StockPredictionApp {
 
     async fetchYahooQuote(symbol) {
         const fetchOnce = async () => {
-            const url = `/api/yahoo/quote?symbol=${encodeURIComponent(symbol)}`;
-            const resp = await fetch(url);
+            const url = `${this.backendBase}/api/yahoo/quote?symbol=${encodeURIComponent(symbol)}`;
+            const resp = await fetch(url).catch((e)=>{ console.log('quote fetch error', e); throw e; });
             const data = await resp.json();
             const r = data?.quoteResponse?.result?.[0] || data?.quoteResponse?.result?.[0];
             if (!r) throw new Error('No quote');
@@ -1529,8 +1579,8 @@ class StockPredictionApp {
     async fetchYahooQuotesBatch(symbols) {
         const fetchOnce = async () => {
             const list = symbols.join(',');
-            const url = `/api/yahoo/quote?symbol=${encodeURIComponent(list)}`;
-            const resp = await fetch(url);
+            const url = `${this.backendBase}/api/yahoo/quote?symbol=${encodeURIComponent(list)}`;
+            const resp = await fetch(url).catch((e)=>{ console.log('batch quote fetch error', e); throw e; });
             const data = await resp.json();
             const results = data?.quoteResponse?.result || [];
             const map = {};
@@ -1550,8 +1600,8 @@ class StockPredictionApp {
         // Cache hit
         try { const db = await this.dbPromise; if (db) { const c = await db.get('historical', key); if (c && (now - (c.ts||0) < 3600*1000)) return c.data; } } catch (_) {}
         const fetchOnce = async () => {
-            const url = `/api/yahoo/chart?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}&interval=1d`;
-            const resp = await fetch(url);
+            const url = `${this.backendBase}/api/yahoo/chart?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}&interval=1d`;
+            const resp = await fetch(url).catch((e)=>{ console.log('chart fetch error', e); throw e; });
             const data = await resp.json();
             const r = data?.chart?.result?.[0];
             if (!r) throw new Error('no_result');
@@ -1577,8 +1627,7 @@ class StockPredictionApp {
             // Alpha fallback
             try {
                 const df = new DataFetcher(this.apiUrl);
-                const apiKey = (document.getElementById('apiKey')?.value || '').trim();
-                const av = await df.fetchStockData(symbol, apiKey);
+                const av = await df.fetchStockData(symbol);
                 let closes = (av?.closes||[]).filter(v=>isFinite(v)&&v>0);
                 const mean = closes.reduce((a,b)=>a+b,0)/Math.max(1,closes.length);
                 const std = Math.sqrt(closes.reduce((s,v)=>s+Math.pow(v-mean,2),0)/Math.max(1,closes.length));
@@ -1823,14 +1872,12 @@ class DataFetcher {
         this.apiUrl = apiUrl;
     }
 
-    async fetchStockData(symbol, apiKey) {
+    async fetchStockData(symbol) {
         const params = new URLSearchParams({
             function: 'TIME_SERIES_DAILY',
             symbol: symbol,
             outputsize: 'full'
         });
-
-        if (apiKey) params.set('apikey', apiKey);
 
         const backendUrl = `${this.apiUrl}?${params}`;
         try {
@@ -1845,32 +1892,17 @@ class DataFetcher {
                 throw new Error(msg);
             }
             return this.parseTimeSeries(data);
+
         } catch (err) {
-            const isNetworkish = err && (err.name === 'AbortError' || (typeof err.message === 'string' && err.message.includes('Failed to fetch')) || err instanceof TypeError);
-            const canDirect = apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0;
-            if (!isNetworkish || !canDirect) throw err;
-            // Direct Alpha Vantage fallback
-            const directUrl = `https://www.alphavantage.co/query?${params}`;
-            let response = await this.fetchWithTimeout(directUrl);
-            if (response.status === 429) {
-                await new Promise(r => setTimeout(r, 1500));
-                response = await this.fetchWithTimeout(directUrl);
-            }
-            const data = await response.json();
-            if (!response.ok || data['Error Message'] || data['Information'] || data.error) {
-                const msg = data.error || data['Error Message'] || data['Information'] || `HTTP ${response.status}`;
-                throw new Error(msg);
-            }
-            return this.parseTimeSeries(data);
+            throw err;
         }
     }
 
-    async fetchQuote(symbol, apiKey) {
+    async fetchQuote(symbol) {
         const params = new URLSearchParams({
             function: 'GLOBAL_QUOTE',
             symbol: symbol
         });
-        if (apiKey) params.set('apikey', apiKey);
         const response = await this.fetchWithTimeout(`${this.apiUrl}?${params}`);
         const data = await response.json();
         const q = data && data['Global Quote'];
@@ -1878,11 +1910,11 @@ class DataFetcher {
         return { symbol, price };
     }
 
-    async fetchFundamentals(symbol, apiKey) {
+    async fetchFundamentals(symbol) {
         try {
-            const overview = await this.fetchAlphaVantageData('OVERVIEW', symbol, apiKey);
-            const balanceSheet = await this.fetchAlphaVantageData('BALANCE_SHEET', symbol, apiKey);
-            const cashFlow = await this.fetchAlphaVantageData('CASH_FLOW', symbol, apiKey);
+            const overview = await this.fetchAlphaVantageData('OVERVIEW', symbol);
+            const balanceSheet = await this.fetchAlphaVantageData('BALANCE_SHEET', symbol);
+            const cashFlow = await this.fetchAlphaVantageData('CASH_FLOW', symbol);
 
             return this.parseFundamentals(overview, balanceSheet, cashFlow);
         } catch (error) {
@@ -1891,9 +1923,8 @@ class DataFetcher {
         }
     }
 
-    async fetchAlphaVantageData(functionName, symbol, apiKey) {
+    async fetchAlphaVantageData(functionName, symbol) {
         const params = new URLSearchParams({ function: functionName, symbol });
-        if (apiKey) params.set('apikey', apiKey);
         const backendUrl = `${this.apiUrl}?${params}`;
         try {
             let response = await this.fetchWithTimeout(backendUrl);
@@ -1908,21 +1939,7 @@ class DataFetcher {
             }
             return data;
         } catch (err) {
-            const isNetworkish = err && (err.name === 'AbortError' || (typeof err.message === 'string' && err.message.includes('Failed to fetch')) || err instanceof TypeError);
-            const canDirect = apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0;
-            if (!isNetworkish || !canDirect) throw err;
-            const directUrl = `https://www.alphavantage.co/query?${params}`;
-            let response = await this.fetchWithTimeout(directUrl);
-            if (response.status === 429) {
-                await new Promise(r => setTimeout(r, 1500));
-                response = await this.fetchWithTimeout(directUrl);
-            }
-            const data = await response.json();
-            if (!response.ok || data['Error Message'] || data['Information'] || data.error) {
-                const msg = data.error || data['Error Message'] || data['Information'] || `HTTP ${response.status}`;
-                throw new Error(msg);
-            }
-            return data;
+            throw err;
         }
     }
 
@@ -2513,65 +2530,138 @@ class TradePlanner {
 
 // Monte Carlo Simulator
 class MonteCarloSimulator {
-    boxMuller() {
-        const u = Math.random();
-        const v = Math.random();
-        return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-    }
+	boxMuller() {
+		const u = Math.random();
+		const v = Math.random();
+		return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+	}
 
-    simulateGBM(S0, mu, sigma, days, paths, options = {}) {
-        const dt = 1 / 252;
-        const results = [];
-        const crashProb = Number(options.crashProbDaily) || 0;
-        const crashDrop = Number(options.crashDropFraction) || 0;
-        const jumpProb = options.jumpProbDaily != null ? Number(options.jumpProbDaily) : 0.05;
-        const jumpMagnitude = options.jumpMagnitude != null ? Number(options.jumpMagnitude) : 0.10; // 10%
-        
-        for (let p = 0; p < paths; p++) {
-            const path = [S0];
-            let S = S0;
-            
-            for (let t = 1; t <= days; t++) {
-                const Z = this.boxMuller();
-                S = S * Math.exp((mu - 0.5 * sigma * sigma) * dt + sigma * Math.sqrt(dt) * Z);
-                if (crashProb > 0 && crashDrop > 0 && Math.random() < crashProb) {
-                    S = S * Math.max(0.0001, 1 - crashDrop);
-                }
-                // Random jump (up/down)
-                if (Math.random() < jumpProb) {
-                    const dir = Math.random() < 0.5 ? -1 : 1;
-                    S = S * (1 + dir * jumpMagnitude);
-                }
-                path.push(S);
-            }
-            results.push(path);
-        }
-        
-        return {
-            paths: results,
-            quantiles: this.calculateQuantiles(results)
-        };
-    }
+	simulateGBM(S0, mu, sigma, days, paths, options = {}) {
+		const dt = 1 / 252;
+		const results = [];
+		const crashProb = Number(options.crashProbDaily) || 0;
+		const crashDrop = Number(options.crashDropFraction) || 0;
+		const jumpProb = options.jumpProbDaily != null ? Number(options.jumpProbDaily) : 0.05;
+		const jumpMagnitude = options.jumpMagnitude != null ? Number(options.jumpMagnitude) : 0.10; // 10%
+		
+		for (let p = 0; p < paths; p++) {
+			const path = [S0];
+			let S = S0;
+			
+			for (let t = 1; t <= days; t++) {
+				const Z = this.boxMuller();
+				S = S * Math.exp((mu - 0.5 * sigma * sigma) * dt + sigma * Math.sqrt(dt) * Z);
+				if (crashProb > 0 && crashDrop > 0 && Math.random() < crashProb) {
+					S = S * Math.max(0.0001, 1 - crashDrop);
+				}
+				// Random jump (up/down)
+				if (Math.random() < jumpProb) {
+					const dir = Math.random() < 0.5 ? -1 : 1;
+					S = S * (1 + dir * jumpMagnitude);
+				}
+				path.push(S);
+			}
+			results.push(path);
+		}
+		
+		return {
+			paths: results,
+			quantiles: this.calculateQuantiles(results)
+		};
+	}
 
-    calculateQuantiles(simulations, quantiles = [0.05, 0.5, 0.95]) {
-        const n = simulations[0].length;
-        const results = {};
-        
-        for (const q of quantiles) {
-            results[`q${Math.round(q * 100)}`] = [];
-        }
-        
-        for (let t = 0; t < n; t++) {
-            const values = simulations.map(sim => sim[t]).sort((a, b) => a - b);
-            
-            for (const q of quantiles) {
-                const index = Math.floor(q * (values.length - 1));
-                results[`q${Math.round(q * 100)}`].push(values[index]);
-            }
-        }
-        
-        return results;
-    }
+	// Merton Jump Diffusion: GBM + Poisson jumps with lognormal jump size
+	simulateJumpDiffusion(S0, mu, sigma, days, paths, opts = {}) {
+		const dt = 1 / 252;
+		const lambda = Number(opts.lambda) || 0.1; // average jumps per year
+		const kappa = Number(opts.kappa) || -0.10; // average jump size (lognormal mean shift)
+		const delta = Number(opts.delta) || 0.20; // jump size volatility
+		const results = [];
+		for (let p = 0; p < paths; p++) {
+			let S = S0;
+			const path = [S];
+			for (let t = 1; t <= days; t++) {
+				const Z = this.boxMuller();
+				// Jump count in dt ~ Poisson(lambda*dt)
+				const probJump = lambda * dt;
+				let J = 0;
+				if (Math.random() < probJump) {
+					// log jump size ~ N(kappa, delta^2)
+					J = Math.exp(kappa + delta * this.boxMuller()) - 1;
+				}
+				const driftAdj = mu - 0.5 * sigma * sigma - lambda * (Math.exp(kappa + 0.5 * delta * delta) - 1);
+				S = S * Math.exp(driftAdj * dt + sigma * Math.sqrt(dt) * Z) * (1 + J);
+				path.push(S);
+			}
+			results.push(path);
+		}
+		return { paths: results, quantiles: this.calculateQuantiles(results) };
+	}
+
+	// Simplified Heston model using Euler discretization with full truncation for variance
+	simulateHeston(S0, mu, v0, kappa, theta, xi, rho, days, paths) {
+		const dt = 1 / 252;
+		const results = [];
+		for (let p = 0; p < paths; p++) {
+			let S = S0;
+			let v = Math.max(1e-8, v0);
+			const path = [S];
+			for (let t = 1; t <= days; t++) {
+				// Correlated Brownian motions
+				const z1 = this.boxMuller();
+				const z2 = this.boxMuller();
+				const dw1 = Math.sqrt(dt) * z1;
+				const dw2 = Math.sqrt(dt) * (rho * z1 + Math.sqrt(Math.max(0, 1 - rho * rho)) * z2);
+				// Variance process (CIR)
+				v = Math.max(0, v + kappa * (theta - v) * dt + xi * Math.sqrt(Math.max(v, 0)) * dw2);
+				const vol = Math.sqrt(Math.max(v, 0));
+				S = S * Math.exp((mu - 0.5 * v) * dt + vol * dw1);
+				path.push(S);
+			}
+			results.push(path);
+		}
+		return { paths: results, quantiles: this.calculateQuantiles(results) };
+	}
+
+	// Simple GARCH(1,1) simulation for daily variance
+	simulateGARCH(S0, mu, days, paths, omega = 0.0001, alpha = 0.1, beta = 0.85, sigma0 = 0.02) {
+		const results = [];
+		for (let p = 0; p < paths; p++) {
+			let S = S0;
+			let sigma2 = sigma0 * sigma0;
+			const path = [S];
+			for (let t = 1; t <= days; t++) {
+				const z = this.boxMuller();
+				const ret = mu / 252 + Math.sqrt(Math.max(sigma2, 1e-8)) * z;
+				S = S * Math.exp(ret);
+				path.push(S);
+				// Update variance
+				sigma2 = omega + alpha * (ret * ret) + beta * sigma2;
+			}
+			results.push(path);
+		}
+		return { paths: results, quantiles: this.calculateQuantiles(results) };
+	}
+
+	calculateQuantiles(simulations, quantiles = [0.05, 0.5, 0.95]) {
+		const n = simulations[0].length;
+		const results = {};
+		
+		for (const q of quantiles) {
+			results[`q${Math.round(q * 100)}`] = [];
+		}
+		
+		for (let t = 0; t < n; t++) {
+			const values = simulations.map(sim => sim[t]).sort((a, b) => a - b);
+			
+			for (const q of quantiles) {
+				const index = Math.floor(q * (values.length - 1));
+				results[`q${Math.round(q * 100)}`].push(values[index]);
+			}
+		}
+		
+		return results;
+	}
 }
 
 // Sentiment Calculator
@@ -3199,7 +3289,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let currentAbort = null;
             let grokModel = 'grok-2-latest';
             // Fetch backend Grok config once
-            (async () => {
+        (async () => {
                 try {
                     const cfgResp = await fetch(`${app.backendBase}/api/grok/config`).catch(()=>null);
                     if (cfgResp && cfgResp.ok) {

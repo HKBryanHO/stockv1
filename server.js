@@ -3,6 +3,7 @@ import cors from 'cors';
 import https from 'https';
 import dotenv from 'dotenv';
 import http from 'http';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -17,6 +18,43 @@ const XAI_API_BASE = (process.env.XAI_API_BASE || '').trim();
 const XAI_MODEL = (process.env.XAI_MODEL || '').trim();
 const XAI_FALLBACK_API_BASE = (process.env.XAI_FALLBACK_API_BASE || '').trim();
 const XAI_FALLBACK_MODEL = (process.env.XAI_FALLBACK_MODEL || '').trim();
+const AUTH_USER = (process.env.AUTH_USER || 'admin').toString();
+const AUTH_PASS = (process.env.AUTH_PASS || process.env.AUTH_PASSWORD || '').toString();
+const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS || (12 * 60 * 60 * 1000));
+
+// Minimal in-memory session store
+const sessions = new Map(); // token -> { user, exp }
+function parseCookies(req) {
+  const header = req.headers['cookie'] || '';
+  const out = {};
+  header.split(';').forEach(p => {
+    const idx = p.indexOf('=');
+    if (idx > -1) {
+      const k = p.slice(0, idx).trim();
+      const v = p.slice(idx + 1).trim();
+      out[k] = decodeURIComponent(v);
+    }
+  });
+  return out;
+}
+function getSession(req) {
+  try {
+    const cookies = parseCookies(req);
+    const token = cookies['sp_session'];
+    if (!token) return null;
+    const rec = sessions.get(token);
+    if (!rec) return null;
+    if (Date.now() > rec.exp) { sessions.delete(token); return null; }
+    return { token, user: rec.user };
+  } catch { return null; }
+}
+function authRequired(req, res, next) {
+  const sess = getSession(req);
+  if (sess) return next();
+  // redirect to login preserving destination
+  const dest = encodeURIComponent(req.originalUrl || '/predictor');
+  return res.redirect(`/login?next=${dest}`);
+}
 
 // Grok ops helpers: rate limit, coalescing, telemetry, safety
 const RL_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
@@ -1174,18 +1212,63 @@ app.post('/api/sim/garch', (req, res) => {
   res.json(computeBandsFromCloses(closes, days, 0.9));
 });
 
-// Serve static files from public directory
-app.use(express.static('public'));
-
-// Root route - serve BMA-HK homepage
+// Root route -> login homepage
 app.get('/', (req, res) => {
-  res.sendFile('home.html', { root: 'public' });
+  return res.redirect('/login');
 });
 
-// Predictor subpage
-app.get('/predictor', (req, res) => {
+// Login page
+app.get('/login', (req, res) => {
+  res.sendFile('login.html', { root: 'public' });
+});
+
+// Auth endpoints
+app.post('/auth/login', (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (!AUTH_PASS) {
+      return res.status(500).json({ error: 'AUTH_PASSWORD not configured on server' });
+    }
+    if ((username || '').toString() !== AUTH_USER || (password || '').toString() !== AUTH_PASS) {
+      return res.status(401).json({ error: 'invalid_credentials' });
+    }
+    const token = crypto.randomBytes(24).toString('hex');
+    sessions.set(token, { user: AUTH_USER, exp: Date.now() + SESSION_TTL_MS });
+    const secure = (req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https');
+    const cookie = `sp_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}; Max-Age=${Math.floor(SESSION_TTL_MS/1000)}`;
+    res.setHeader('Set-Cookie', cookie);
+    const next = (req.query && req.query.next) || req.body?.next || '/predictor';
+    return res.json({ ok: true, next });
+  } catch (e) {
+    return res.status(500).json({ error: e && e.message ? e.message : 'login_error' });
+  }
+});
+
+app.post('/auth/logout', (req, res) => {
+  try {
+    const cookies = parseCookies(req);
+    const token = cookies['sp_session'];
+    if (token) sessions.delete(token);
+    const secure = (req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https');
+    res.setHeader('Set-Cookie', `sp_session=; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}; Max-Age=0`);
+    return res.json({ ok: true });
+  } catch {
+    return res.json({ ok: true });
+  }
+});
+
+// Protect direct access to index.html
+app.get('/index.html', authRequired, (req, res) => {
   res.sendFile('index.html', { root: 'public' });
 });
+
+// Protector for predictor
+app.get('/predictor', authRequired, (req, res) => {
+  res.sendFile('index.html', { root: 'public' });
+});
+
+// Serve static files from public directory (after protected HTML routes)
+app.use(express.static('public'));
 
 app.listen(PORT, () => {
   console.log(`Proxy server listening on http://localhost:${PORT}`);

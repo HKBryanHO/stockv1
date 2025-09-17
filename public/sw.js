@@ -1,5 +1,5 @@
-const CACHE_NAME = 'stock-app-cache-v3';
-const CORE_ASSETS = ['/', '/index.html', '/styles.css', '/js/app.js', '/manifest.webmanifest'];
+const CACHE_NAME = 'stock-app-cache-v4';
+const CORE_ASSETS = ['/', '/index.html', '/login.html', '/styles.css', '/js/app.js', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -31,7 +31,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Only handle same-origin API paths; bypass cross-origin (avoids CORS/cache issues)
+  // Network-first for API; cache fallback (includes same-origin and reverse-proxied /api on same origin)
   if (isSameOrigin && url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(event.request).then((resp) => {
@@ -39,6 +39,18 @@ self.addEventListener('fetch', (event) => {
         caches.open(CACHE_NAME).then((c) => c.put(event.request, copy));
         return resp;
       }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Static assets: cache-first for JS/CSS/images
+  if (isSameOrigin && (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.match(/\.(png|jpg|jpeg|gif|svg|webp|ico)$/i))) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => cached || fetch(event.request).then((resp) => {
+        const copy = resp.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(event.request, copy));
+        return resp;
+      }))
     );
     return;
   }

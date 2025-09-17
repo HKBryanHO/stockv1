@@ -187,6 +187,20 @@ git push heroku main
 3. 選擇 Docker 部署方式
 4. 添加 Redis 服務
 
+#### 使用 Render（前端靜態 + 後端 Node 代理快速方案）
+
+- 建立 Web Service：指向本倉庫或只包含 `server.js` 的新倉庫。
+- 環境變數：
+  - `ALPHA_VANTAGE_KEY=你的key`
+  - `PORT=3001`
+- 取得後端 URL（例如 `https://your-api.onrender.com`）。
+- 前端 `index.html` 的 `<meta name="backend-base">` 可留空，前端會自動預設：
+  - 本地開發：使用 `window.location.origin`
+  - 生產域名：預設使用 `https://your-api.onrender.com`
+  - 你也可以填入實際的後端 URL 覆蓋預設。
+
+前端所有 `fetch` 已自動使用 `backendBase` 前綴，且不需要在前端輸入 Alpha Vantage API 金鑰。
+
 #### 使用 VPS
 
 1. **安裝 Docker 和 Docker Compose**
