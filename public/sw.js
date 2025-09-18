@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stock-app-cache-v9';
+const CACHE_NAME = 'stock-app-cache-v10';
 const CORE_ASSETS = ['/', '/index.html', '/login.html', '/styles.css', '/js/app.js', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
@@ -22,9 +22,14 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
+    caches.keys().then((keys) => {
+      // Clear ALL old caches
+      return Promise.all(keys.map(k => caches.delete(k)));
+    }).then(() => {
+      // Force reload all clients
+      return self.clients.claim();
+    })
   );
-  self.clients.claim();
 });
 
 // Cache-first for core assets; network-first for same-origin API
