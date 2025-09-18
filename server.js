@@ -123,7 +123,7 @@ function chooseProvider(req, providedKey) {
       'HTTP-Referer': OPENROUTER_REFERER,
       'X-Title': OPENROUTER_TITLE
     },
-    defaultModel: 'meta-llama/llama-3.1-8b-instruct:free'
+    defaultModel: 'meta-llama/llama-3.1-8b-instruct'
   };
 }
 
@@ -457,7 +457,7 @@ app.get('/api/grok/config', (req, res) => {
       provider: provider.name
     });
   } catch (_) {
-    res.json({ model: 'meta-llama/llama-3.1-8b-instruct:free', base: 'https://openrouter.ai/api/v1/chat/completions', provider: 'openrouter' });
+    res.json({ model: 'meta-llama/llama-3.1-8b-instruct', base: 'https://openrouter.ai/api/v1/chat/completions', provider: 'openrouter' });
   }
 });
 
@@ -656,7 +656,7 @@ app.post('/api/grok/analyze', async (req, res) => {
     const symbol = (body.symbol || '').toString();
     const series = body.series || {}; // { dates:[], closes:[], volumes:[] }
     // Simple 10-minute cache keyed by symbol + model + length + last values
-    const modelForAnalyze = 'meta-llama/llama-3.1-8b-instruct:free';
+    const modelForAnalyze = 'meta-llama/llama-3.1-8b-instruct';
     const closes = Array.isArray(series.closes) ? series.closes : [];
     const dates = Array.isArray(series.dates) ? series.dates : [];
     const cacheKey = `grok:analyze:${modelForAnalyze}:${symbol}:${closes.length}:${dates.length}:${closes.slice(-5).join(',')}:${(dates.slice(-2)||[]).join(',')}`;
@@ -734,7 +734,7 @@ app.post('/api/grok/screener', async (req, res) => {
       universe = ['NVDA','MSFT','AAPL','AMZN','GOOGL','META','TSLA','AMD','AVGO','ORCL','LLY','ABBV','NFLX','CRM','INTC','ADBE','SHOP','BABA','0700.HK','9988.HK'];
     }
 
-    const modelId = 'meta-llama/llama-3.1-8b-instruct:free';
+    const modelId = 'meta-llama/llama-3.1-8b-instruct';
     const cacheKey = `grok:screener:${modelId}:${nlQuery}:${universe.join(',')}:${size}`;
     const nowTs = Date.now();
     const ttlMs = 10 * 60 * 1000;
@@ -844,7 +844,7 @@ app.post('/api/grok/news-insights', async (req, res) => {
     if (!symbol) return res.status(400).json({ error: 'symbol required' });
     const lookbackDays = Math.min(30, Math.max(1, Number(body.lookbackDays || 7)));
 
-    const modelId = 'meta-llama/llama-3.1-8b-instruct:free';
+    const modelId = 'meta-llama/llama-3.1-8b-instruct';
     const cacheKey = `grok:news:${modelId}:${symbol}:${lookbackDays}`;
     const nowTs = Date.now();
     const ttlMs = 10 * 60 * 1000;
@@ -947,7 +947,7 @@ app.post('/api/grok/peers-compare', async (req, res) => {
     }
     const universe = [symbol, ...peers];
 
-    const modelId = 'meta-llama/llama-3.1-8b-instruct:free';
+    const modelId = 'meta-llama/llama-3.1-8b-instruct';
     const cacheKey = `grok:peers:${modelId}:${universe.join(',')}`;
     const cached = cache.get(cacheKey);
     const nowTs = Date.now();
@@ -1053,7 +1053,7 @@ app.post('/api/grok/portfolio-doctor', async (req, res) => {
     if (!holdings.length) return res.status(400).json({ error: 'holdings required' });
     const budget = Number(body.budget || 100000);
 
-    const modelId = 'meta-llama/llama-3.1-8b-instruct:free';
+    const modelId = 'meta-llama/llama-3.1-8b-instruct';
     const cacheKey = `grok:portfolio:${modelId}:${holdings.map(h=>`${h.symbol}:${h.weight}`).join('|')}:${budget}`;
     const cached = cache.get(cacheKey);
     const nowTs = Date.now();

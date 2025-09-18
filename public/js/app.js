@@ -3314,10 +3314,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const chooseLLMModel = (key) => {
                 try {
                     if (key && key.trim().toLowerCase().startsWith('sk-or-')) {
-                        return 'meta-llama/llama-3.1-8b-instruct:free';
+                        return 'meta-llama/llama-3.1-8b-instruct';
                     }
                 } catch(_) {}
-                return grokModel || 'meta-llama/llama-3.1-8b-instruct:free';
+                return grokModel || 'meta-llama/llama-3.1-8b-instruct';
             };
             const composeMessages = (userText) => {
                 const template = (tplEl && tplEl.value) || 'analyst';

@@ -33,13 +33,19 @@ self.addEventListener('fetch', (event) => {
 
   // Network-first for API; cache fallback (includes same-origin and reverse-proxied /api on same origin)
   if (isSameOrigin && url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(event.request).then((resp) => {
-        const copy = resp.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(event.request, copy));
-        return resp;
-      }).catch(() => caches.match(event.request))
-    );
+    // Only cache GET requests, not POST
+    if (event.request.method === 'GET') {
+      event.respondWith(
+        fetch(event.request).then((resp) => {
+          const copy = resp.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(event.request, copy));
+          return resp;
+        }).catch(() => caches.match(event.request))
+      );
+    } else {
+      // For POST requests, just fetch without caching
+      event.respondWith(fetch(event.request));
+    }
     return;
   }
 
