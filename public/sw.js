@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stock-app-cache-v5';
+const CACHE_NAME = 'stock-app-cache-v6';
 const CORE_ASSETS = ['/', '/index.html', '/login.html', '/styles.css', '/js/app.js', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
