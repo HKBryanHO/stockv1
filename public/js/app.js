@@ -3300,7 +3300,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btn && promptEl && outEl) {
             let busy = false;
             let currentAbort = null;
-            let grokModel = 'sonar-small-online';
+            let grokModel = 'llama-3.1-sonar-small-128k-online';
             // Fetch backend Grok config once
             (async () => {
                 try {
@@ -3314,9 +3314,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const chooseLLMModel = (key) => {
                 try {
                     // Use Perplexity model by default
-                    return grokModel || 'sonar-small-online';
+                    return grokModel || 'llama-3.1-sonar-small-128k-online';
                 } catch(_) {}
-                return grokModel || 'sonar-small-online';
+                return grokModel || 'llama-3.1-sonar-small-128k-online';
             };
             const composeMessages = (userText) => {
                 const template = (tplEl && tplEl.value) || 'analyst';
@@ -3489,7 +3489,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const useIntent = intent === 'auto' ? (lower.includes('peer') ? 'peers' : lower.includes('news') ? 'news' : lower.includes('peg') || lower.includes('market cap') ? 'screener' : lower.includes('portfolio') ? 'portfolio' : 'chat') : intent;
             const systemPrompt = copilotLang === 'en' ? 'You are a helpful financial assistant.' : '你是一位專業且簡潔的財經助理。';
             if (useIntent === 'chat') {
-                const resp = await fetch(`${app.backendBase}/api/grok/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, model: 'sonar-small-online', messages: [{ role:'system', content: systemPrompt }, { role:'user', content:q }] }) });
+                const resp = await fetch(`${app.backendBase}/api/grok/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, model: 'llama-3.1-sonar-small-128k-online', messages: [{ role:'system', content: systemPrompt }, { role:'user', content:q }] }) });
                 const j = await resp.json();
                 const text = j?.choices?.[0]?.message?.content || JSON.stringify(j);
                 return text;
