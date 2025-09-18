@@ -3802,7 +3802,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (tmplSaveBtn) tmplSaveBtn.addEventListener('click', () => {
             const name = (tmplNameEl && tmplNameEl.value || '').trim();
-            if (!name) { app.toast && app.toast('請輸入模板名'); return; }
+            if (!name) { app.showToast && app.showToast('請輸入模板名'); return; }
             const t = {
                 studies: {
                     EMA: !!(emaEl && emaEl.checked),
@@ -3816,7 +3816,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const store = JSON.parse(localStorage.getItem('tv_templates')||'{}');
                 store[name] = t; localStorage.setItem('tv_templates', JSON.stringify(store));
                 loadTemplatesDropdown();
-                app.toast && app.toast('模板已保存');
+                app.showToast && app.showToast('模板已保存');
             } catch(_) {}
         });
         if (tmplApplySel) tmplApplySel.addEventListener('change', () => {
@@ -3832,7 +3832,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 compares = Array.isArray(tpl.compares)?tpl.compares:[];
                 timeframe = tpl.timeframe || timeframe;
                 loadTv();
-                app.toast && app.toast('模板已套用');
+                app.showToast && app.showToast('模板已套用');
             } catch(_) {}
         });
         async function pollAlerts() {
@@ -3852,7 +3852,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const hit = (a.dir === '>=') ? latest >= a.price : latest <= a.price;
                         if (hit) {
                             a.fired = true; changed = true;
-                            app.toast && app.toast(`到價觸發：${a.symbol} ${a.dir} ${a.price}（現價 ${latest}）`);
+                            app.showToast && app.showToast(`到價觸發：${a.symbol} ${a.dir} ${a.price}（現價 ${latest}）`);
                             if (alertSoundEl && alertSoundEl.checked) {
                                 try { new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=').play().catch(()=>{}); } catch(_) {}
                             }
@@ -3866,19 +3866,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const price = Number(alertPriceEl && alertPriceEl.value || 0);
             const sym = (tvSymbolInput && tvSymbolInput.value || '').trim();
             const dir = (alertDirEl && alertDirEl.value) || '>=';
-            if (!price || !sym) { app.toast && app.toast('請輸入代號與價格'); return; }
+            if (!price || !sym) { app.showToast && app.showToast('請輸入代號與價格'); return; }
             const backend = alertBackendEl && alertBackendEl.checked;
             if (backend) {
                 try { await fetch(`${app.backendBase}/api/alerts`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ symbol: sym, dir, price }) }); } catch(_){ }
                 renderAlerts();
-                app.toast && app.toast('後端提醒已新增（每分鐘檢查）');
+                app.showToast && app.showToast('後端提醒已新增（每分鐘檢查）');
             } else {
                 const all = readAlerts();
                 all.push({ symbol: sym, dir, price, fired: false, createdAt: Date.now() });
                 writeAlerts(all); renderAlerts();
                 if (alertTimer) clearInterval(alertTimer);
                 alertTimer = setInterval(pollAlerts, 15000);
-                app.toast && app.toast('到價提醒已新增（每 15 秒輪詢）');
+                app.showToast && app.showToast('到價提醒已新增（每 15 秒輪詢）');
             }
         });
         tfButtons.forEach(btn => btn.addEventListener('click', () => { timeframe = btn.getAttribute('data-tf') || 'D'; loadTv(); }));
@@ -4100,15 +4100,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         loadBtPresets();
         btPresetSave && btPresetSave.addEventListener('click', () => {
-            const name = (btPresetName && btPresetName.value || '').trim(); if (!name) { app.toast && app.toast('請輸入 Preset 名稱'); return; }
+            const name = (btPresetName && btPresetName.value || '').trim(); if (!name) { app.showToast && app.showToast('請輸入 Preset 名稱'); return; }
             const p = { strat: btStrategy.value, fast: Number(btFast.value||10), slow: Number(btSlow.value||20), cap: Number(btCap.value||100000), fee: Number(btFee.value||5), range: btRange.value };
-            try { const store = JSON.parse(localStorage.getItem('bt_presets')||'{}'); store[name] = p; localStorage.setItem('bt_presets', JSON.stringify(store)); loadBtPresets(); app.toast && app.toast('Preset 已保存'); } catch(_){}
+            try { const store = JSON.parse(localStorage.getItem('bt_presets')||'{}'); store[name] = p; localStorage.setItem('bt_presets', JSON.stringify(store)); loadBtPresets(); app.showToast && app.showToast('Preset 已保存'); } catch(_){}
         });
         btPresetApply && btPresetApply.addEventListener('change', () => {
             const key = btPresetApply.value; if (!key) return;
             try { const store = JSON.parse(localStorage.getItem('bt_presets')||'{}'); const p = store[key]; if (!p) return;
                 btStrategy.value = p.strat || 'ma'; btFast.value = p.fast ?? 10; btSlow.value = p.slow ?? 20; btCap.value = p.cap ?? 100000; btFee.value = p.fee ?? 5; btRange.value = p.range || '2y';
-                app.toast && app.toast('Preset 已套用');
+                app.showToast && app.showToast('Preset 已套用');
             } catch(_){}
         });
         async function fetchCloses(symbol, years) {
@@ -4235,7 +4235,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const slow = Math.max(fast+1, parseInt(btSlow.value||'20',10));
             const strat = (btStrategy && btStrategy.value) || 'ma';
             compareQueue.push({ sym, strat, params: { fast, slow } });
-            app.toast && app.toast('已加入對比清單');
+            app.showToast && app.showToast('已加入對比清單');
         });
         btRunCompare && btRunCompare.addEventListener('click', async () => {
             try {
