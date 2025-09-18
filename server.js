@@ -21,7 +21,7 @@ const XAI_FALLBACK_API_BASE = '';
 const XAI_FALLBACK_MODEL = '';
 // Perplexity API (LLM provider)
 const PERPLEXITY_API_KEY = (process.env.PERPLEXITY_API_KEY || '').trim();
-const PERPLEXITY_MODEL = (process.env.PERPLEXITY_MODEL || 'llama-3.1-sonar-small-128k-online').trim();
+const PERPLEXITY_MODEL = (process.env.PERPLEXITY_MODEL || 'sonar').trim();
 const AUTH_USER = (process.env.AUTH_USER || 'admin').toString();
 const AUTH_PASS = (process.env.AUTH_PASS || process.env.AUTH_PASSWORD || '').toString();
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS || (12 * 60 * 60 * 1000));
