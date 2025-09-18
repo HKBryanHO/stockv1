@@ -19,10 +19,9 @@ const XAI_API_BASE = '';
 const XAI_MODEL = '';
 const XAI_FALLBACK_API_BASE = '';
 const XAI_FALLBACK_MODEL = '';
-// OpenRouter (LLM fallback/alternative)
-const OPENROUTER_API_KEY = (process.env.OPENROUTER_API_KEY || '').trim();
-const OPENROUTER_REFERER = (process.env.OPENROUTER_REFERER || 'https://www.bma-hk.com').trim();
-const OPENROUTER_TITLE = (process.env.OPENROUTER_TITLE || 'Stock Predictor').trim();
+// Perplexity API (LLM provider)
+const PERPLEXITY_API_KEY = (process.env.PERPLEXITY_API_KEY || '').trim();
+const PERPLEXITY_MODEL = (process.env.PERPLEXITY_MODEL || 'llama-3.1-sonar-small-128k-online').trim();
 const AUTH_USER = (process.env.AUTH_USER || 'admin').toString();
 const AUTH_PASS = (process.env.AUTH_PASS || process.env.AUTH_PASSWORD || '').toString();
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS || (12 * 60 * 60 * 1000));
@@ -113,17 +112,17 @@ function sanitizeMessages(messages) {
   });
 }
 
-// Provider selection (XAI vs OpenRouter). If the provided key starts with 'sk-or-', use OpenRouter.
+// Provider selection (Perplexity API)
 function chooseProvider(req, providedKey) {
   return {
-    name: 'openrouter',
-    apiKey: (providedKey && providedKey.trim()) || OPENROUTER_API_KEY,
-    baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
+    name: 'perplexity',
+    apiKey: PERPLEXITY_API_KEY,
+    baseUrl: 'https://api.perplexity.ai/chat/completions',
     headers: {
-      'HTTP-Referer': OPENROUTER_REFERER,
-      'X-Title': OPENROUTER_TITLE
+      'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
+      'Content-Type': 'application/json'
     },
-    defaultModel: 'meta-llama/llama-3.1-8b-instruct'
+    defaultModel: PERPLEXITY_MODEL
   };
 }
 
@@ -457,7 +456,7 @@ app.get('/api/grok/config', (req, res) => {
       provider: provider.name
     });
   } catch (_) {
-    res.json({ model: 'meta-llama/llama-3.1-8b-instruct', base: 'https://openrouter.ai/api/v1/chat/completions', provider: 'openrouter' });
+    res.json({ model: PERPLEXITY_MODEL, base: 'https://api.perplexity.ai/chat/completions', provider: 'perplexity' });
   }
 });
 
@@ -656,7 +655,7 @@ app.post('/api/grok/analyze', async (req, res) => {
     const symbol = (body.symbol || '').toString();
     const series = body.series || {}; // { dates:[], closes:[], volumes:[] }
     // Simple 10-minute cache keyed by symbol + model + length + last values
-    const modelForAnalyze = 'meta-llama/llama-3.1-8b-instruct';
+    const modelForAnalyze = PERPLEXITY_MODEL;
     const closes = Array.isArray(series.closes) ? series.closes : [];
     const dates = Array.isArray(series.dates) ? series.dates : [];
     const cacheKey = `grok:analyze:${modelForAnalyze}:${symbol}:${closes.length}:${dates.length}:${closes.slice(-5).join(',')}:${(dates.slice(-2)||[]).join(',')}`;
@@ -734,7 +733,7 @@ app.post('/api/grok/screener', async (req, res) => {
       universe = ['NVDA','MSFT','AAPL','AMZN','GOOGL','META','TSLA','AMD','AVGO','ORCL','LLY','ABBV','NFLX','CRM','INTC','ADBE','SHOP','BABA','0700.HK','9988.HK'];
     }
 
-    const modelId = 'meta-llama/llama-3.1-8b-instruct';
+    const modelId = PERPLEXITY_MODEL;
     const cacheKey = `grok:screener:${modelId}:${nlQuery}:${universe.join(',')}:${size}`;
     const nowTs = Date.now();
     const ttlMs = 10 * 60 * 1000;
@@ -844,7 +843,7 @@ app.post('/api/grok/news-insights', async (req, res) => {
     if (!symbol) return res.status(400).json({ error: 'symbol required' });
     const lookbackDays = Math.min(30, Math.max(1, Number(body.lookbackDays || 7)));
 
-    const modelId = 'meta-llama/llama-3.1-8b-instruct';
+    const modelId = PERPLEXITY_MODEL;
     const cacheKey = `grok:news:${modelId}:${symbol}:${lookbackDays}`;
     const nowTs = Date.now();
     const ttlMs = 10 * 60 * 1000;
@@ -947,7 +946,7 @@ app.post('/api/grok/peers-compare', async (req, res) => {
     }
     const universe = [symbol, ...peers];
 
-    const modelId = 'meta-llama/llama-3.1-8b-instruct';
+    const modelId = PERPLEXITY_MODEL;
     const cacheKey = `grok:peers:${modelId}:${universe.join(',')}`;
     const cached = cache.get(cacheKey);
     const nowTs = Date.now();
@@ -1053,7 +1052,7 @@ app.post('/api/grok/portfolio-doctor', async (req, res) => {
     if (!holdings.length) return res.status(400).json({ error: 'holdings required' });
     const budget = Number(body.budget || 100000);
 
-    const modelId = 'meta-llama/llama-3.1-8b-instruct';
+    const modelId = PERPLEXITY_MODEL;
     const cacheKey = `grok:portfolio:${modelId}:${holdings.map(h=>`${h.symbol}:${h.weight}`).join('|')}:${budget}`;
     const cached = cache.get(cacheKey);
     const nowTs = Date.now();

@@ -3313,11 +3313,10 @@ document.addEventListener('DOMContentLoaded', () => {
             })();
             const chooseLLMModel = (key) => {
                 try {
-                    if (key && key.trim().toLowerCase().startsWith('sk-or-')) {
-                        return 'meta-llama/llama-3.1-8b-instruct';
-                    }
+                    // Use Perplexity model by default
+                    return grokModel || 'llama-3.1-sonar-small-128k-online';
                 } catch(_) {}
-                return grokModel || 'meta-llama/llama-3.1-8b-instruct';
+                return grokModel || 'llama-3.1-sonar-small-128k-online';
             };
             const composeMessages = (userText) => {
                 const template = (tplEl && tplEl.value) || 'analyst';
