@@ -1,9 +1,22 @@
-const CACHE_NAME = 'stock-app-cache-v7';
+const CACHE_NAME = 'stock-app-cache-v8';
 const CORE_ASSETS = ['/', '/index.html', '/login.html', '/styles.css', '/js/app.js', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS))
+    caches.open(CACHE_NAME).then((cache) => {
+      // Clear old caches
+      return caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            if (cacheName !== CACHE_NAME) {
+              return caches.delete(cacheName);
+            }
+          })
+        );
+      }).then(() => {
+        return cache.addAll(CORE_ASSETS);
+      });
+    })
   );
 });
 

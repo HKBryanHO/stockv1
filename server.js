@@ -469,7 +469,7 @@ app.post('/api/grok/chat', async (req, res) => {
     const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
     const provider = chooseProvider(req, providedKey);
     if (!provider.apiKey) {
-      return res.status(400).json({ error: 'Missing API key. Provide header x-api-key or set OPENROUTER_API_KEY/XAI_API_KEY.' });
+      return res.status(400).json({ error: 'Missing API key. Provide header x-api-key or set PERPLEXITY_API_KEY.' });
     }
 
     // Basic input shape: { messages: [{role, content}], model?, stream? }
@@ -535,7 +535,7 @@ app.post('/api/grok/stream', async (req, res) => {
     const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
     const provider = chooseProvider(req, providedKey);
     if (!provider.apiKey) {
-      return res.status(400).json({ error: 'Missing API key. Provide header x-api-key or set OPENROUTER_API_KEY/XAI_API_KEY.' });
+      return res.status(400).json({ error: 'Missing API key. Provide header x-api-key or set PERPLEXITY_API_KEY.' });
     }
 
     const body = req.body || {};
@@ -647,9 +647,9 @@ app.post('/api/grok/analyze', async (req, res) => {
   try {
     // Allow per-request API key via header or body
     const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
-    const apiKeyToUse = providedKey || XAI_API_KEY;
+    const apiKeyToUse = providedKey || PERPLEXITY_API_KEY;
     if (!apiKeyToUse) {
-      return res.status(400).json({ error: 'Missing xAI API key. Provide header x-xai-api-key or body.apiKey.' });
+      return res.status(400).json({ error: 'Missing Perplexity API key. Provide header x-api-key or body.apiKey.' });
     }
     const body = req.body || {};
     const symbol = (body.symbol || '').toString();
@@ -720,9 +720,9 @@ app.post('/api/grok/analyze', async (req, res) => {
 app.post('/api/grok/screener', async (req, res) => {
   try {
     const providedKey = ((req.headers['x-xai-api-key'] || req.headers['x-api-key'] || '') + '').trim() || (req.body && (req.body.apiKey || '').toString().trim());
-    const apiKeyToUse = providedKey || XAI_API_KEY;
+    const apiKeyToUse = providedKey || PERPLEXITY_API_KEY;
     if (!apiKeyToUse) {
-      return res.status(400).json({ error: 'Missing xAI API key. Provide header x-xai-api-key or body.apiKey.' });
+      return res.status(400).json({ error: 'Missing Perplexity API key. Provide header x-api-key or body.apiKey.' });
     }
     const body = req.body || {};
     const nlQuery = (body.query || '').toString().trim();
