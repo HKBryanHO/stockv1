@@ -3350,9 +3350,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 outEl.textContent = '';
                 try {
                     const userPerplexityKey = keyEl && keyEl.value ? keyEl.value.trim() : '';
+                    console.log('User Perplexity Key:', userPerplexityKey ? 'provided' : 'not provided');
+                    console.log('Backend Base:', app.backendBase);
                     // Key is optional for OpenRouter if server has env key
                     const useStream = !!(streamEl && streamEl.checked);
                     const messages = composeMessages(userText);
+                    console.log('Messages:', messages);
                     if (useStream) {
                         const streamUrl = `${app.backendBase}/api/grok/stream`;
                         try {
@@ -3361,7 +3364,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ apiKey: userPerplexityKey, model: chooseLLMModel(userPerplexityKey), messages })
                             };
+                            console.log('Stream URL:', streamUrl);
+                            console.log('Request init:', init);
                             const resp = await fetch(streamUrl, init);
+                            console.log('Stream response status:', resp.status);
                             if (!resp.ok || !resp.body) {
                                 throw new Error(`HTTP ${resp.status}`);
                             }
@@ -3390,23 +3396,30 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
                             }
                         } catch (e) {
+                            console.log('Stream failed, falling back to chat:', e);
                             const chatUrl = `${app.backendBase}/api/grok/chat`;
+                            console.log('Chat URL:', chatUrl);
                             const resp = await fetch(chatUrl, {
                                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ apiKey: userPerplexityKey, model: chooseLLMModel(userPerplexityKey), messages })
                             });
+                            console.log('Chat response status:', resp.status);
                             const data = await resp.json();
+                            console.log('Chat response data:', data);
                             const text = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content)
                                 || data?.message || JSON.stringify(data, null, 2);
                             outEl.textContent = text;
                         }
                     } else {
                         const chatUrl = `${app.backendBase}/api/grok/chat`;
+                        console.log('Non-stream Chat URL:', chatUrl);
                         const resp = await fetch(chatUrl, {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ apiKey: userPerplexityKey, model: chooseLLMModel(userPerplexityKey), messages })
                         });
+                        console.log('Non-stream response status:', resp.status);
                         const data = await resp.json();
+                        console.log('Non-stream response data:', data);
                         const text = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content)
                             || data?.message || JSON.stringify(data, null, 2);
                         outEl.textContent = text;
