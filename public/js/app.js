@@ -773,23 +773,23 @@ class StockPredictionApp {
             const calculator = new QuantitativeCalculator();
 
             const stockData = { dates: dates, closes: closes, volumes: ts.volumes || [], opens: ts.opens || [], highs: ts.highs || [], lows: ts.lows || [] };
-            // Auto request Grok analysis with the fetched series (only if user provided a Grok key)
+            // Auto request Perplexity analysis with the fetched series (only if user provided a Perplexity key)
             try {
                 const keyEl = document.getElementById('grokApiKey');
-                const userGrokKey = keyEl && keyEl.value ? keyEl.value.trim() : '';
-                if (userGrokKey) {
+                const userPerplexityKey = keyEl && keyEl.value ? keyEl.value.trim() : '';
+                if (userPerplexityKey) {
                     let ga;
                     try {
                         ga = await fetch(`${this.backendBase}/api/grok/analyze`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ apiKey: userGrokKey, symbol: formData.symbol, series: { dates, closes, volumes: ts.volumes || [] } })
+                            body: JSON.stringify({ apiKey: userPerplexityKey, symbol: formData.symbol, series: { dates, closes, volumes: ts.volumes || [] } })
                         });
                     } catch (e1) {
                         ga = await fetch(`http://localhost:3001/api/grok/analyze`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ apiKey: userGrokKey, symbol: formData.symbol, series: { dates, closes, volumes: ts.volumes || [] } })
+                            body: JSON.stringify({ apiKey: userPerplexityKey, symbol: formData.symbol, series: { dates, closes, volumes: ts.volumes || [] } })
                         });
                     }
                     const gag = await ga.json();
@@ -797,7 +797,7 @@ class StockPredictionApp {
                     if (el) el.textContent = JSON.stringify(gag.analysis || gag, null, 2);
                 } else {
                     const el = document.getElementById('grokAutoOutput');
-                    if (el) el.textContent = '（未提供 Grok API 金鑰，已跳過自動分析）';
+                    if (el) el.textContent = '（未提供 Perplexity API 金鑰，已跳過自動分析）';
                 }
             } catch (_) {}
             const fundamentals = await dataFetcher.fetchFundamentals();
@@ -3287,7 +3287,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Make app globally available for history rerun
     window.app = app;
-    // Wire Grok AI minimal client
+    // Wire Perplexity AI minimal client
     try {
         const btn = document.getElementById('grokBtn');
         const promptEl = document.getElementById('grokPrompt');
@@ -3298,26 +3298,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const streamEl = document.getElementById('grokStream');
         const cancelEl = document.getElementById('grokCancel');
         if (btn && promptEl && outEl) {
-            console.log('Grok AI client initialized successfully');
+            console.log('Perplexity AI client initialized successfully');
             let busy = false;
             let currentAbort = null;
-            let grokModel = 'sonar';
-            // Fetch backend Grok config once
+            let perplexityModel = 'sonar';
+            // Fetch backend Perplexity config once
             (async () => {
                 try {
                     const cfgResp = await fetch(`${app.backendBase}/api/grok/config`).catch(()=>null);
                     if (cfgResp && cfgResp.ok) {
                         const cfg = await cfgResp.json();
-                        if (cfg && cfg.model) grokModel = cfg.model;
+                        if (cfg && cfg.model) perplexityModel = cfg.model;
                     }
                 } catch (_) {}
             })();
             const chooseLLMModel = (key) => {
                 try {
                     // Use Perplexity model by default
-                    return grokModel || 'sonar';
+                    return perplexityModel || 'sonar';
                 } catch(_) {}
-                return grokModel || 'sonar';
+                return perplexityModel || 'sonar';
             };
             const composeMessages = (userText) => {
                 const template = (tplEl && tplEl.value) || 'analyst';
@@ -3339,17 +3339,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 ];
             };
             btn.addEventListener('click', async () => {
-                console.log('Grok AI button clicked');
+                console.log('Perplexity AI button clicked');
                 if (busy) return;
                 const userText = (promptEl.value || '').trim();
                 if (!userText) { outEl.textContent = '請先輸入提示內容'; return; }
                 busy = true;
                 const original = btn.innerHTML;
-                btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 等待 Grok 回覆...';
+                btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 等待 Perplexity 回覆...';
                 if (cancelEl) cancelEl.style.display = 'inline-flex';
                 outEl.textContent = '';
                 try {
-                    const userGrokKey = keyEl && keyEl.value ? keyEl.value.trim() : '';
+                    const userPerplexityKey = keyEl && keyEl.value ? keyEl.value.trim() : '';
                     // Key is optional for OpenRouter if server has env key
                     const useStream = !!(streamEl && streamEl.checked);
                     const messages = composeMessages(userText);
@@ -3359,7 +3359,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             const init = {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ apiKey: userGrokKey, model: chooseLLMModel(userGrokKey), messages })
+                                body: JSON.stringify({ apiKey: userPerplexityKey, model: chooseLLMModel(userPerplexityKey), messages })
                             };
                             const resp = await fetch(streamUrl, init);
                             if (!resp.ok || !resp.body) {
@@ -3393,7 +3393,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             const chatUrl = `${app.backendBase}/api/grok/chat`;
                             const resp = await fetch(chatUrl, {
                                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ apiKey: userGrokKey, model: chooseLLMModel(userGrokKey), messages })
+                                body: JSON.stringify({ apiKey: userPerplexityKey, model: chooseLLMModel(userPerplexityKey), messages })
                             });
                             const data = await resp.json();
                             const text = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content)
@@ -3404,7 +3404,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const chatUrl = `${app.backendBase}/api/grok/chat`;
                         const resp = await fetch(chatUrl, {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ apiKey: userGrokKey, model: chooseLLMModel(userGrokKey), messages })
+                            body: JSON.stringify({ apiKey: userPerplexityKey, model: chooseLLMModel(userPerplexityKey), messages })
                         });
                         const data = await resp.json();
                         const text = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content)
@@ -3414,7 +3414,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (e) {
                     console.error('AI chat error:', e);
                     outEl.textContent = '發生錯誤：' + (e && e.message ? e.message : 'unknown') + '\n' +
-                        '請確認：伺服器正在運行、可從此域名訪問 /api/grok/chat、以及後端已設定 API 金鑰。';
+                        '請確認：伺服器正在運行、可從此域名訪問 /api/grok/chat、以及後端已設定 Perplexity API 金鑰。';
                 } finally {
                     btn.innerHTML = original;
                     if (cancelEl) cancelEl.style.display = 'none';
@@ -3432,7 +3432,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     } catch (e) {
-        console.error('Grok AI client error:', e);
+        console.error('Perplexity AI client error:', e);
     }
     // Register service worker only on http(s)
     if ('serviceWorker' in navigator) {
@@ -3917,7 +3917,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const query = (qEl.value || '').trim();
                     if (!query) { outEl.textContent = '請輸入條件描述'; throw new Error('missing_query'); }
                     const apiKey = (kEl && kEl.value || '').trim();
-                    if (!apiKey) { outEl.textContent = '請提供 Grok API Key'; throw new Error('missing_key'); }
+                    if (!apiKey) { outEl.textContent = '請提供 Perplexity API Key'; throw new Error('missing_key'); }
                     const size = Math.max(1, Math.min(20, Number(nEl && nEl.value || 10)));
                     const universe = (uEl && uEl.value || '').split(',').map(s=>s.trim()).filter(Boolean);
                     let resp;
@@ -3962,7 +3962,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const apiKey = (keyEl.value || '').trim();
                     const lookbackDays = Math.max(1, Math.min(30, Number(daysEl.value || 7)));
                     if (!symbol) { outEl.textContent = '請輸入股票代號'; throw new Error('missing_symbol'); }
-                    if (!apiKey) { outEl.textContent = '請提供 Grok API Key'; throw new Error('missing_key'); }
+                    if (!apiKey) { outEl.textContent = '請提供 Perplexity API Key'; throw new Error('missing_key'); }
                     let resp;
                     try {
                         resp = await fetch(`${app.backendBase}/api/grok/news-insights`, {
@@ -4005,7 +4005,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const apiKey = (keyEl.value || '').trim();
                     const peers = (peersEl.value || '').split(',').map(s=>s.trim()).filter(Boolean);
                     if (!symbol) { outEl.textContent = '請輸入 Target 代號'; throw new Error('missing_symbol'); }
-                    if (!apiKey) { outEl.textContent = '請提供 Grok API Key'; throw new Error('missing_key'); }
+                    if (!apiKey) { outEl.textContent = '請提供 Perplexity API Key'; throw new Error('missing_key'); }
                     let resp;
                     try {
                         resp = await fetch(`${app.backendBase}/api/grok/peers-compare`, {
@@ -4048,7 +4048,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const apiKey = (kEl.value || '').trim();
                     const budget = Number(bEl.value || 100000);
                     if (!raw) { outEl.textContent = '請輸入持倉，例如 AAPL:0.3,MSFT:0.4,TSLA:0.3'; throw new Error('missing_holdings'); }
-                    if (!apiKey) { outEl.textContent = '請提供 Grok API Key'; throw new Error('missing_key'); }
+                    if (!apiKey) { outEl.textContent = '請提供 Perplexity API Key'; throw new Error('missing_key'); }
                     const holdings = raw.split(',').map(x => x.trim()).filter(Boolean).map(x => {
                         const [sym, wt] = x.split(':');
                         return { symbol: (sym||'').trim(), weight: Number(wt || 0) };
