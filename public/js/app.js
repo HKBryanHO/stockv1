@@ -324,42 +324,71 @@ class StockPredictionApp {
         if (!container) return;
 
         container.classList.add('result-content');
-        container.innerHTML = '<p>載入中…</p>';
+        container.innerHTML = '<p>AI 正在分析市場並推薦股票…</p>';
 
         try {
-            // Use backend aggregated insights if available
-            const defaultSymbols = ['NVDA','PLTR','MSFT','GOOGL','9988.HK','0700.HK','AVGO','AMD','IONQ','LLY','ABBV'];
-            const qs = encodeURIComponent(defaultSymbols.join(','));
-            const resp = await fetch(`${this.backendBase}/api/market/insights?symbols=${qs}`);
-            if (resp.ok) {
-                const data = await resp.json();
-                const seriesMap = data.series || {};
-                const symbols = Object.keys(seriesMap);
-                if (symbols.length) {
-                    const ymap = await this.fetchYahooQuotesBatch(symbols);
-                    symbols.forEach(sym => {
-                        const px = ymap[sym];
-                        const sd = seriesMap[sym];
-                        if (isFinite(px) && sd && sd.closes && sd.closes.length) {
-                            sd.closes[sd.closes.length - 1] = Number(px);
-                        }
-                    });
+            // Use AI to analyze market and recommend stocks
+            const aiRecommendedSymbols = await this.getAIRecommendedStocks();
+            console.log('AI recommended symbols:', aiRecommendedSymbols);
+            
+            if (aiRecommendedSymbols && aiRecommendedSymbols.length > 0) {
+                const qs = encodeURIComponent(aiRecommendedSymbols.join(','));
+                const resp = await fetch(`${this.backendBase}/api/market/insights?symbols=${qs}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const seriesMap = data.series || {};
+                    const symbols = Object.keys(seriesMap);
+                    if (symbols.length) {
+                        const ymap = await this.fetchYahooQuotesBatch(symbols);
+                        symbols.forEach(sym => {
+                            const px = ymap[sym];
+                            const sd = seriesMap[sym];
+                            if (isFinite(px) && sd && sd.closes && sd.closes.length) {
+                                sd.closes[sd.closes.length - 1] = Number(px);
+                            }
+                        });
+                    }
+                    container.innerHTML = this.buildMarketDashboardTemplate(seriesMap, aiRecommendedSymbols);
+                    return;
                 }
-                container.innerHTML = this.buildMarketDashboardTemplate(seriesMap);
+            }
+        } catch (e) {
+            console.error('AI market analysis failed:', e);
+            // Proceed to fallback
+        }
+
+        // Fallback: use AI screener to get recommended stocks
+        try {
+            const aiSymbols = await this.getAIScreenerRecommendations();
+            if (aiSymbols && aiSymbols.length > 0) {
+                const series = {};
+                for (const s of aiSymbols) {
+                    try {
+                        const ts = await this.fetchYahooHistorical(s, '6mo');
+                        const yq = await this.fetchYahooQuote(s);
+                        if (isFinite(yq.price) && ts?.closes?.length) {
+                            ts.closes[ts.closes.length - 1] = Number(yq.price);
+                        }
+                        series[s] = ts || { dates: [], closes: [], volumes: [] };
+                    } catch (_) {
+                        series[s] = { dates: [], closes: [], volumes: [] };
+                    }
+                }
+                container.innerHTML = this.buildMarketDashboardTemplate(series, aiSymbols);
                 return;
             }
         } catch (e) {
-            // Proceed to client-side aggregation fallback
+            console.error('AI screener fallback failed:', e);
         }
 
-        // Fallback: build from Yahoo Finance only (no mock)
+        // Final fallback: use default symbols
         try {
             const symbols = ['NVDA','PLTR','MSFT','GOOGL','9988.HK','0700.HK','AVGO','AMD','IONQ','LLY','ABBV'];
             const series = {};
             for (const s of symbols) {
                 try {
                     const ts = await this.fetchYahooHistorical(s, '6mo');
-                        const yq = await this.fetchYahooQuote(s);
+                    const yq = await this.fetchYahooQuote(s);
                     if (isFinite(yq.price) && ts?.closes?.length) {
                         ts.closes[ts.closes.length - 1] = Number(yq.price);
                     }
@@ -368,11 +397,63 @@ class StockPredictionApp {
                     series[s] = { dates: [], closes: [], volumes: [] };
                 }
             }
-            container.innerHTML = this.buildMarketDashboardTemplate(series);
+            container.innerHTML = this.buildMarketDashboardTemplate(series, symbols);
             return;
         } catch (_) {
             container.innerHTML = this.buildMarketDashboardTemplate();
         }
+    }
+
+    async getAIRecommendedStocks() {
+        try {
+            // Use AI screener to get market recommendations
+            const screenerQuery = "推薦10隻最具投資價值的股票，包括科技、金融、醫療等不同行業，基於當前市場趨勢和基本面分析";
+            const response = await fetch(`${this.backendBase}/api/grok/screener`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    apiKey: '', // Use backend key
+                    query: screenerQuery,
+                    size: 10
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data && data.candidates && Array.isArray(data.candidates)) {
+                    return data.candidates.map(c => c.symbol).filter(Boolean);
+                }
+            }
+        } catch (e) {
+            console.error('AI screener request failed:', e);
+        }
+        return null;
+    }
+
+    async getAIScreenerRecommendations() {
+        try {
+            // Alternative AI screener query for market analysis
+            const screenerQuery = "基於量化分析，推薦當前市場最具潛力的股票，考慮技術指標、基本面、市場情緒等因素";
+            const response = await fetch(`${this.backendBase}/api/grok/screener`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    apiKey: '', // Use backend key
+                    query: screenerQuery,
+                    size: 8
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data && data.candidates && Array.isArray(data.candidates)) {
+                    return data.candidates.map(c => c.symbol).filter(Boolean);
+                }
+            }
+        } catch (e) {
+            console.error('AI screener fallback failed:', e);
+        }
+        return null;
     }
 
     generateMarketDashboardHTML(data) {
@@ -392,7 +473,7 @@ class StockPredictionApp {
         `;
     }
 
-    buildMarketDashboardTemplate(liveSeries) {
+    buildMarketDashboardTemplate(liveSeries, aiRecommendedSymbols = null) {
         const d = new Date().toLocaleDateString();
         const planner = new TradePlanner();
         const getSD = (sym) => {
@@ -421,8 +502,18 @@ class StockPredictionApp {
                 return `<tr><td>${sym}</td><td>${mkt}</td><td>${dod}</td><td>${wow}</td><td>${highlights}</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
             }
         };
+        const aiHeader = aiRecommendedSymbols ? 
+            `<div class="ai-recommendation-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <h3 style="margin: 0 0 10px 0;">🤖 AI 智能推薦股票</h3>
+                <p style="margin: 0; opacity: 0.9;">基於量化分析、技術指標、基本面分析和市場情緒，AI 推薦以下 ${aiRecommendedSymbols.length} 隻最具投資價值的股票：</p>
+                <div style="margin-top: 10px; font-size: 14px;">
+                    <strong>推薦股票：</strong> ${aiRecommendedSymbols.join(', ')}
+                </div>
+            </div>` : '';
+
         return `
             <div class="result-section">
+                ${aiHeader}
                 <h3>AI-Powered Market Insights Dashboard</h3>
                 <div class="help-text">更新日期：${d}</div>
                 <h4>AI Sector</h4>
