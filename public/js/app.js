@@ -3298,6 +3298,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const streamEl = document.getElementById('grokStream');
         const cancelEl = document.getElementById('grokCancel');
         if (btn && promptEl && outEl) {
+            console.log('Grok AI client initialized successfully');
             let busy = false;
             let currentAbort = null;
             let grokModel = 'sonar';
@@ -3338,6 +3339,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ];
             };
             btn.addEventListener('click', async () => {
+                console.log('Grok AI button clicked');
                 if (busy) return;
                 const userText = (promptEl.value || '').trim();
                 if (!userText) { outEl.textContent = '請先輸入提示內容'; return; }
@@ -3429,7 +3431,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
         }
-    } catch (_) {}
+    } catch (e) {
+        console.error('Grok AI client error:', e);
+    }
     // Register service worker only on http(s)
     if ('serviceWorker' in navigator) {
         try {
