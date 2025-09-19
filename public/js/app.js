@@ -406,23 +406,43 @@ class StockPredictionApp {
 
     async getAIRecommendedStocks() {
         try {
-            // Use AI screener to get market recommendations
-            const screenerQuery = "推薦10隻最具投資價值的股票，包括科技、金融、醫療等不同行業，基於當前市場趨勢和基本面分析";
+            // Use AI screener to get market recommendations with random variation
+            const queries = [
+                "推薦10隻最具投資價值的股票，包括科技、金融、醫療等不同行業，基於當前市場趨勢和基本面分析",
+                "基於量化分析，推薦當前市場最具潛力的股票，考慮技術指標、基本面、市場情緒等因素",
+                "分析當前市場機會，推薦10隻具有成長潛力的股票，涵蓋不同行業和市值",
+                "基於AI和機器學習趨勢，推薦相關的優質股票投資機會",
+                "考慮當前經濟環境，推薦具有防禦性和成長性的股票組合"
+            ];
+            const randomQuery = queries[Math.floor(Math.random() * queries.length)];
+            console.log('Sending AI screener request:', randomQuery);
+            
             const response = await fetch(`${this.backendBase}/api/grok/screener`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     apiKey: '', // Use backend key
-                    query: screenerQuery,
+                    query: randomQuery,
                     size: 10
                 })
             });
             
+            console.log('AI screener response status:', response.status);
+            
             if (response.ok) {
                 const data = await response.json();
+                console.log('AI screener response data:', data);
+                
                 if (data && data.candidates && Array.isArray(data.candidates)) {
-                    return data.candidates.map(c => c.symbol).filter(Boolean);
+                    const symbols = data.candidates.map(c => c.symbol).filter(Boolean);
+                    console.log('AI recommended symbols:', symbols);
+                    return symbols;
+                } else {
+                    console.log('No candidates found in AI response');
                 }
+            } else {
+                const errorText = await response.text();
+                console.error('AI screener failed:', response.status, errorText);
             }
         } catch (e) {
             console.error('AI screener request failed:', e);

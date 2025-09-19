@@ -739,14 +739,15 @@ app.post('/api/grok/screener', async (req, res) => {
     }
 
     const modelId = PERPLEXITY_MODEL;
-    const cacheKey = `grok:screener:${modelId}:${nlQuery}:${universe.join(',')}:${size}`;
-    const nowTs = Date.now();
-    const ttlMs = 10 * 60 * 1000;
-    const cached = cache.get(cacheKey);
-    if (cached && (nowTs - cached.ts) < ttlMs) {
-      res.setHeader('Content-Type', 'application/json');
-      return res.status(200).send(cached.body);
-    }
+    // Disable cache for market prediction to get fresh AI recommendations
+    // const cacheKey = `grok:screener:${modelId}:${nlQuery}:${universe.join(',')}:${size}:${Date.now()}`;
+    // const nowTs = Date.now();
+    // const ttlMs = 10 * 60 * 1000;
+    // const cached = cache.get(cacheKey);
+    // if (cached && (nowTs - cached.ts) < ttlMs) {
+    //   res.setHeader('Content-Type', 'application/json');
+    //   return res.status(200).send(cached.body);
+    // }
 
     // Fetch lightweight metrics via Yahoo for each symbol
     async function fetchQuote(sym) {
@@ -791,7 +792,8 @@ app.post('/api/grok/screener', async (req, res) => {
       { role: 'user', content: `Request: ${nlQuery}\n\nUniverse size: ${dataset.length}\nMetrics JSON: ${JSON.stringify(dataset).slice(0, 35000)}\n\nReturn JSON only.` }
     ];
 
-    const baseUrl = XAI_API_BASE || 'https://api.x.ai/v1/chat/completions';
+    const provider = chooseProvider(req, providedKey);
+    const baseUrl = provider.baseUrl;
     const urlObj = new URL(baseUrl);
     const isHttps = urlObj.protocol === 'https:';
     const lib = isHttps ? https : http;
