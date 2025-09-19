@@ -332,7 +332,16 @@ class StockPredictionApp {
             console.log('AI recommended symbols:', aiRecommendedSymbols);
             
             if (aiRecommendedSymbols && aiRecommendedSymbols.length > 0) {
-                const qs = encodeURIComponent(aiRecommendedSymbols.join(','));
+                const norm = (arr)=>arr.map(s=>{
+                    if (!s) return s;
+                    let x = (s+"").trim().toUpperCase();
+                    if (x === 'TSMC') return 'TSM';
+                    if (/^HK:/.test(x)) x = x.replace(/^HK:/,'') + '.HK';
+                    if (/^\d{4}$/.test(x)) x = x + '.HK';
+                    return x;
+                });
+                const list = norm(aiRecommendedSymbols);
+                const qs = encodeURIComponent(list.join(','));
                 const resp = await fetch(`${this.backendBase}/api/market/insights?symbols=${qs}`);
                 if (resp.ok) {
                     const data = await resp.json();

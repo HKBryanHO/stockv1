@@ -305,7 +305,15 @@ app.get('/api/market/insights', async (req, res) => {
       ? symbolsParam.split(',').map((s) => s.trim()).filter(Boolean)
       : ['NVDA','PLTR','MSFT','GOOGL','9988.HK','0700.HK','AVGO','AMD','IONQ','LLY','ABBV'];
 
-    const fetchChartYahoo = async (symbol) => {
+    const normalizeSymbol = (s) => {
+      if (!s) return s;
+      const map = { 'TSMC': 'TSM' };
+      if (map[s]) return map[s];
+      return s;
+    };
+
+    const fetchChartYahoo = async (symbolRaw) => {
+      const symbol = normalizeSymbol(symbolRaw);
       const u1 = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=6mo&interval=1d&events=history&includeAdjustedClose=true`;
       let { status, body } = await tryFetchWithFallback(u1);
       if (status !== 200 || !body) {
@@ -314,7 +322,8 @@ app.get('/api/market/insights', async (req, res) => {
         status = r2.status; body = r2.body;
       }
       if (status !== 200 || !body) return { ok: false };
-      const j = JSON.parse(body);
+      let j;
+      try { j = JSON.parse(body); } catch { return { ok: false }; }
       const r = j && j.chart && j.chart.result && j.chart.result[0];
       if (!r) return { ok: false };
       const timestamps = r.timestamp || [];
@@ -325,7 +334,8 @@ app.get('/api/market/insights', async (req, res) => {
       return { ok: true, dates, closes, volumes };
     };
 
-    const fetchQuoteYahoo = async (symbol) => {
+    const fetchQuoteYahoo = async (symbolRaw) => {
+      const symbol = normalizeSymbol(symbolRaw);
       const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`;
       try {
         const { body } = await fetchJson(url);
