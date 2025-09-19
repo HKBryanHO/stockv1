@@ -69,7 +69,12 @@ const metrics = { routes: {}, startedAt: new Date().toISOString() };
 // Prompt templates in-memory admin
 let promptTemplates = {
   versions: {
-    v1: { analyst: 'You are a helpful financial analysis assistant.', risk: 'Focus on risks and mitigations.', news: 'Summarize headlines into TL;DR with risks and catalysts.', screener: 'Transform NL request into stock filters and return candidates.' }
+    v1: { 
+      analyst: '你係一名擁有超過30年數學博士學位經驗的專業投資者同樣係最高級既程式員，專注於量化金融、隨機過程和機器學習模型在投資決策中的應用。分析方法強調多路徑評估：結合基本面（財務數據）、技術指標（歷史價格模式）、情緒指標（新聞和社交媒體）、以及數學模型（如蒙特卡洛模擬和時間序列預測），以捕捉不確定性並提供概率性洞見。', 
+      risk: '聚焦風險與應對，運用量化模型評估不確定性。', 
+      news: '整合新聞與情緒分析，提供概率性洞見。', 
+      screener: '運用量化篩選條件，基於數學模型提供候選股票。' 
+    }
   },
   active: 'v1',
   ab: { v1: 100 }
@@ -670,7 +675,7 @@ app.post('/api/grok/analyze', async (req, res) => {
     const payload = {
       model: modelForAnalyze,
       messages: [
-        { role: 'system', content: 'You are a senior equity analyst. Return concise JSON.' },
+        { role: 'system', content: '你係一名擁有超過30年數學博士學位經驗的專業投資者同樣係最高級既程式員，專注於量化金融、隨機過程和機器學習模型在投資決策中的應用。分析方法強調多路徑評估：結合基本面（財務數據）、技術指標（歷史價格模式）、情緒指標（新聞和社交媒體）、以及數學模型（如蒙特卡洛模擬和時間序列預測），以捕捉不確定性並提供概率性洞見。請返回簡潔的JSON格式分析。' },
         { role: 'user', content: `Analyze ${symbol} given this JSON series (daily closes, volumes, dates). Return strict JSON with keys: summary, risks, levels {support,resistance}, outlook, actions. Series: ${JSON.stringify({ symbol, series, latest })}` }
       ]
     };

@@ -3363,7 +3363,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     investmentAmount, horizon, stockContext
                 });
                 
-                const sys = `You are a helpful financial analysis assistant. Tone: ${tone}. Return concise, factual answers.${stockContext}`;
+                const sys = `你係一名擁有超過30年數學博士學位經驗的專業投資者同樣係最高級既程式員，專注於量化金融、隨機過程和機器學習模型在投資決策中的應用。分析方法強調多路徑評估：結合基本面（財務數據）、技術指標（歷史價格模式）、情緒指標（新聞和社交媒體）、以及數學模型（如蒙特卡洛模擬和時間序列預測），以捕捉不確定性並提供概率性洞見。語調：${tone}。請提供簡潔、專業的分析。${stockContext}`;
                 let user = userText;
                 if (template === 'analyst') {
                     user = `請以專業分析師角度精簡回答：${userText}`;
@@ -3564,7 +3564,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const intent = (intentEl && intentEl.value) || 'auto';
             const lower = q.toLowerCase();
             const useIntent = intent === 'auto' ? (lower.includes('peer') ? 'peers' : lower.includes('news') ? 'news' : lower.includes('peg') || lower.includes('market cap') ? 'screener' : lower.includes('portfolio') ? 'portfolio' : 'chat') : intent;
-            const systemPrompt = copilotLang === 'en' ? 'You are a helpful financial assistant.' : '你是一位專業且簡潔的財經助理。';
+            const systemPrompt = copilotLang === 'en' ? 'You are a professional investor with over 30 years of experience and a PhD in Mathematics, specializing in quantitative finance, stochastic processes, and machine learning models for investment decisions. Your analysis emphasizes multi-path evaluation combining fundamentals, technical indicators, sentiment analysis, and mathematical models like Monte Carlo simulations and time series forecasting to capture uncertainty and provide probabilistic insights.' : '你係一名擁有超過30年數學博士學位經驗的專業投資者同樣係最高級既程式員，專注於量化金融、隨機過程和機器學習模型在投資決策中的應用。分析方法強調多路徑評估：結合基本面（財務數據）、技術指標（歷史價格模式）、情緒指標（新聞和社交媒體）、以及數學模型（如蒙特卡洛模擬和時間序列預測），以捕捉不確定性並提供概率性洞見。';
             if (useIntent === 'chat') {
                 const resp = await fetch(`${app.backendBase}/api/grok/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, model: 'sonar-pro', messages: [{ role:'system', content: systemPrompt }, { role:'user', content:q }] }) });
                 const j = await resp.json();
