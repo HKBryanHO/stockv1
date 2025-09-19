@@ -3360,7 +3360,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     const useStream = !!(streamEl && streamEl.checked);
                     const messages = composeMessages(userText);
                     console.log('Messages:', messages);
+                    console.log('Stream mode requested:', useStream);
+                    // Perplexity API doesn't support streaming, so we'll use chat mode instead
                     if (useStream) {
+                        console.log('Stream mode requested but Perplexity doesn\'t support streaming, using chat mode instead');
+                    }
+                    if (false) { // Disable streaming for Perplexity
                         const streamUrl = `${app.backendBase}/api/grok/stream`;
                         try {
                             const init = {
