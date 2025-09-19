@@ -3379,10 +3379,16 @@ document.addEventListener('DOMContentLoaded', () => {
                             currentAbort = reader;
                             const decoder = new TextDecoder('utf-8');
                             let buffer = '';
+                            console.log('Starting to read stream...');
                             while (true) {
                                 const { value, done } = await reader.read();
-                                if (done) break;
-                                buffer += decoder.decode(value, { stream: true });
+                                if (done) {
+                                    console.log('Stream reading completed');
+                                    break;
+                                }
+                                const chunk = decoder.decode(value, { stream: true });
+                                console.log('Received chunk:', chunk);
+                                buffer += chunk;
                                 const parts = buffer.split('\n\n');
                                 buffer = parts.pop() || '';
                                 for (const part of parts) {
@@ -3390,11 +3396,14 @@ document.addEventListener('DOMContentLoaded', () => {
                                     if (!line) continue;
                                     if (line.startsWith('data:')) {
                                         const payload = line.slice(5).trim();
+                                        console.log('Processing data payload:', payload);
                                         if (payload === '[DONE]') continue;
                                         try {
                                             outEl.textContent += payload.replace(/\\n/g, '\n');
+                                            console.log('Updated output element with:', payload);
                                         } catch (_) {
                                             outEl.textContent += payload;
+                                            console.log('Updated output element (fallback) with:', payload);
                                         }
                                     }
                                 }
