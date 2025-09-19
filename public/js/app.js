@@ -3288,6 +3288,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Make app globally available for history rerun
     window.app = app;
     // Wire Perplexity AI minimal client
+    console.log('Starting Perplexity AI client setup...');
     try {
         const btn = document.getElementById('grokBtn');
         const promptEl = document.getElementById('grokPrompt');
@@ -3299,6 +3300,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const cancelEl = document.getElementById('grokCancel');
         if (btn && promptEl && outEl) {
             console.log('Perplexity AI client initialized successfully');
+            console.log('Button found:', btn);
+            console.log('Prompt element found:', promptEl);
+            console.log('Output element found:', outEl);
             let busy = false;
             let currentAbort = null;
             let perplexityModel = 'sonar-pro';
@@ -3443,6 +3447,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     } catch (_) {}
                 });
             }
+        } else {
+            console.log('Missing required elements for Perplexity AI client');
+            console.log('Button found:', !!btn);
+            console.log('Prompt element found:', !!promptEl);
+            console.log('Output element found:', !!outEl);
         }
     } catch (e) {
         console.error('Perplexity AI client error:', e);
