@@ -3326,7 +3326,44 @@ document.addEventListener('DOMContentLoaded', () => {
             const composeMessages = (userText) => {
                 const template = (tplEl && tplEl.value) || 'analyst';
                 const tone = (toneEl && toneEl.value) || 'neutral';
-                const sys = `You are a helpful financial analysis assistant. Tone: ${tone}. Return concise, factual answers.`;
+                // Get current stock data
+                const stockSymbol = (document.getElementById('stockSymbol')?.value || '').trim().toUpperCase();
+                const investmentAmount = document.getElementById('investmentAmount')?.value || '';
+                const horizon = document.getElementById('horizon')?.value || '';
+                
+                // Get current analysis results from the page by searching for text patterns
+                const pageText = document.body.textContent || '';
+                const betaMatch = pageText.match(/Beta:\s*([0-9.]+)/);
+                const varMatch = pageText.match(/VaR\s*95%[^:]*:\s*([^)]+)/);
+                const kellyMatch = pageText.match(/Kelly[^:]*:\s*([^)]+)/);
+                const upsideMatch = pageText.match(/上漲概率[^:]*:\s*([0-9.]+%)/);
+                const currentPriceMatch = pageText.match(/\$([0-9.]+)/);
+                
+                const currentPrice = currentPriceMatch ? `$${currentPriceMatch[1]}` : '';
+                const beta = betaMatch ? betaMatch[1] : '';
+                const var95 = varMatch ? varMatch[1].trim() : '';
+                const kellyPosition = kellyMatch ? kellyMatch[1].trim() : '';
+                const upsideProbability = upsideMatch ? upsideMatch[1] : '';
+                
+                // Build context about current stock analysis
+                let stockContext = '';
+                if (stockSymbol) {
+                    stockContext = `\n\n當前股票分析數據：\n- 股票代號：${stockSymbol}`;
+                    if (currentPrice) stockContext += `\n- 當前價格：${currentPrice}`;
+                    if (beta) stockContext += `\n- Beta值：${beta}`;
+                    if (var95) stockContext += `\n- VaR 95%：${var95}`;
+                    if (kellyPosition) stockContext += `\n- Kelly建議倉位：${kellyPosition}`;
+                    if (upsideProbability) stockContext += `\n- 上漲概率：${upsideProbability}`;
+                    if (investmentAmount) stockContext += `\n- 投資金額：$${investmentAmount}`;
+                    if (horizon) stockContext += `\n- 投資期限：${horizon}天`;
+                }
+                
+                console.log('Extracted stock data:', {
+                    stockSymbol, currentPrice, beta, var95, kellyPosition, upsideProbability,
+                    investmentAmount, horizon, stockContext
+                });
+                
+                const sys = `You are a helpful financial analysis assistant. Tone: ${tone}. Return concise, factual answers.${stockContext}`;
                 let user = userText;
                 if (template === 'analyst') {
                     user = `請以專業分析師角度精簡回答：${userText}`;
