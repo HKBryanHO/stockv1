@@ -381,9 +381,30 @@ class StockPredictionApp {
             console.error('AI screener fallback failed:', e);
         }
 
-        // Final fallback: use default symbols
+        // Final fallback: use diverse default symbols with rotation
         try {
-            const symbols = ['NVDA','PLTR','MSFT','GOOGL','9988.HK','0700.HK','AVGO','AMD','IONQ','LLY','ABBV'];
+            const allSymbols = [
+                // Tech giants
+                ['NVDA', 'MSFT', 'GOOGL', 'META', 'AMZN', 'AAPL'],
+                // AI/ML companies  
+                ['PLTR', 'SNOW', 'CRWD', 'ZS', 'OKTA', 'NET'],
+                // Semiconductors
+                ['AVGO', 'AMD', 'INTC', 'QCOM', 'MRVL', 'ADI'],
+                // Healthcare/Biotech
+                ['LLY', 'ABBV', 'JNJ', 'PFE', 'MRNA', 'GILD'],
+                // Chinese stocks
+                ['9988.HK', '0700.HK', 'BABA', 'JD', 'PDD', 'NIO'],
+                // Quantum/Advanced tech
+                ['IONQ', 'RIGC', 'QUBT', 'IBM', 'GOOGL', 'MSFT']
+            ];
+            
+            // Rotate through different categories based on current time
+            const hour = new Date().getHours();
+            const categoryIndex = hour % allSymbols.length;
+            const symbols = allSymbols[categoryIndex].slice(0, 8); // Take 8 symbols
+            
+            console.log('Using fallback symbols from category', categoryIndex, ':', symbols);
+            
             const series = {};
             for (const s of symbols) {
                 try {

@@ -831,7 +831,7 @@ app.post('/api/grok/screener', async (req, res) => {
 
     const responseObj = { query: nlQuery, universe, size, result: out, data: dataset };
     const outStr = JSON.stringify(responseObj);
-    cache.set(cacheKey, { ts: Date.now(), status: 200, body: outStr });
+    // cache.set(cacheKey, { ts: Date.now(), status: 200, body: outStr }); // Disabled cache
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).send(outStr);
   } catch (e) {
