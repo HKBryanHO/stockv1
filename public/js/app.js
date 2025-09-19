@@ -454,21 +454,30 @@ class StockPredictionApp {
                 const data = await response.json();
                 console.log('AI screener response data:', data);
                 
-                if (data && data.candidates && Array.isArray(data.candidates)) {
+                if (data && data.result && data.result.selected && Array.isArray(data.result.selected)) {
+                    const symbols = data.result.selected.filter(Boolean);
+                    console.log('AI recommended symbols:', symbols);
+                    return symbols;
+                } else if (data && data.candidates && Array.isArray(data.candidates)) {
                     const symbols = data.candidates.map(c => c.symbol).filter(Boolean);
                     console.log('AI recommended symbols:', symbols);
                     return symbols;
                 } else {
-                    console.log('No candidates found in AI response');
+                    console.log('No candidates found in AI response, using fallback');
+                    // Return fallback symbols if AI fails
+                    return ['NVDA', 'PLTR', 'MSFT', 'GOOGL', '9988.HK', '0700.HK', 'AVGO', 'AMD', 'IONQ', 'LLY', 'ABBV'];
                 }
             } else {
                 const errorText = await response.text();
                 console.error('AI screener failed:', response.status, errorText);
+                // Return fallback symbols if API fails
+                return ['NVDA', 'PLTR', 'MSFT', 'GOOGL', '9988.HK', '0700.HK', 'AVGO', 'AMD', 'IONQ', 'LLY', 'ABBV'];
             }
         } catch (e) {
             console.error('AI screener request failed:', e);
+            // Return fallback symbols if request fails completely
+            return ['NVDA', 'PLTR', 'MSFT', 'GOOGL', '9988.HK', '0700.HK', 'AVGO', 'AMD', 'IONQ', 'LLY', 'ABBV'];
         }
-        return null;
     }
 
     async getAIScreenerRecommendations() {

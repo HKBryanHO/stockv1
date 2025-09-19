@@ -1,4 +1,24 @@
 /* Professional Financial UI Design System */
+
+/* Font Awesome Fallback */
+.fas, .far, .fab, .fal, .fad {
+    font-family: "Font Awesome 6 Free", "Font Awesome 6 Brands", sans-serif;
+}
+
+/* Fallback for missing Font Awesome icons */
+.fas:before, .far:before, .fab:before, .fal:before, .fad:before {
+    content: attr(data-fallback);
+}
+
+/* Specific fallbacks for common icons */
+.fa-home:before { content: "🏠"; }
+.fa-chart-line:before { content: "📈"; }
+.fa-calculator:before { content: "🧮"; }
+.fa-tachometer-alt:before { content: "📊"; }
+.fa-newspaper:before { content: "📰"; }
+.fa-chart-area:before { content: "📊"; }
+.fa-cog:before { content: "⚙️"; }
+
 :root {
     /* Primary Color Palette - Professional Dark Theme */
     --bg-primary: #0a0e1a;
