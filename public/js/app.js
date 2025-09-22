@@ -471,7 +471,7 @@ class StockPredictionApp {
             const queries = [
                 "推薦10隻最具投資價值的股票，包括科技、金融、醫療等不同行業，基於當前市場趨勢和基本面分析",
                 "基於量化分析，推薦當前市場最具潛力的股票，考慮技術指標、基本面、市場情緒等因素",
-                "分析當前市場機會，推薦10隻具有成長潛力的股票，涵蓋不同行業和市值",
+                "你係一名擁有超過30年數學博士學位經驗的專業投資者同樣係最高級既程式員，專注於量化金融、隨機過程和機器學習模型在投資決策中的應用。分析方法強調多路徑評估：結合基本面（財務數據）、技術指標（歷史價格模式）、情緒指標（新聞和社交媒體）、以及數學模型（如蒙特卡洛模擬和時間序列預測），以捕捉不確定性並提供概率性洞見。分析當前市場機會，推薦10隻具有成長潛力的股票，涵蓋不同行業和市值",
                 "基於AI和機器學習趨勢，推薦相關的優質股票投資機會",
                 "考慮當前經濟環境，推薦具有防禦性和成長性的股票組合"
             ];
@@ -2121,7 +2121,6 @@ class StockPredictionApp {
             throw error;
         }
     }
-
     async fetchFinancialModelingPrep(symbol) {
         try {
             const fmp = this.alternativeDataSources.financialModelingPrep;
@@ -2770,7 +2769,6 @@ class DataFetcher {
         }
     }
 }
-
 // Quantitative Calculator Class
 class QuantitativeCalculator {
     calculateMetrics(closes) {
@@ -3298,7 +3296,6 @@ class TradePlanner {
         return { current, buy, tp, sl, regime, volRatio, atr, ema20, ema50, bands: bb };
     }
 }
-
 // Monte Carlo Simulator
 class MonteCarloSimulator {
 	boxMuller() {
@@ -3848,7 +3845,6 @@ class ResultRenderer {
         return sign + (v >= 1000 ? v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : v.toFixed(0));
     }
 }
-
 // History Manager
 class HistoryManager {
     constructor() {
