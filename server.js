@@ -166,9 +166,24 @@ function fetchAlphaJson(url) {
   return new Promise((resolve, reject) => {
     https
       .get(url, (r) => {
+        let stream = r;
+        
+        // Handle gzip/deflate compression
+        if (r.headers['content-encoding'] === 'gzip') {
+          const zlib = require('zlib');
+          stream = r.pipe(zlib.createGunzip());
+        } else if (r.headers['content-encoding'] === 'deflate') {
+          const zlib = require('zlib');
+          stream = r.pipe(zlib.createInflate());
+        } else if (r.headers['content-encoding'] === 'br') {
+          const zlib = require('zlib');
+          stream = r.pipe(zlib.createBrotliDecompress());
+        }
+        
         let data = '';
-        r.on('data', (chunk) => (data += chunk));
-        r.on('end', () => resolve({ status: r.statusCode || 200, body: data }));
+        stream.on('data', (chunk) => (data += chunk));
+        stream.on('end', () => resolve({ status: r.statusCode || 200, body: data }));
+        stream.on('error', (e) => reject(e));
       })
       .on('error', (e) => reject(e));
   });
@@ -197,11 +212,28 @@ function fetchJson(url, extraHeaders = {}) {
         ...extraHeaders,
       },
     };
+    
     const req2 = https.request(options, (r) => {
+      let stream = r;
+      
+      // Handle gzip/deflate compression
+      if (r.headers['content-encoding'] === 'gzip') {
+        const zlib = require('zlib');
+        stream = r.pipe(zlib.createGunzip());
+      } else if (r.headers['content-encoding'] === 'deflate') {
+        const zlib = require('zlib');
+        stream = r.pipe(zlib.createInflate());
+      } else if (r.headers['content-encoding'] === 'br') {
+        const zlib = require('zlib');
+        stream = r.pipe(zlib.createBrotliDecompress());
+      }
+      
       let data = '';
-      r.on('data', (chunk) => (data += chunk));
-      r.on('end', () => resolve({ status: r.statusCode || 200, body: data }));
+      stream.on('data', (chunk) => (data += chunk));
+      stream.on('end', () => resolve({ status: r.statusCode || 200, body: data }));
+      stream.on('error', (e) => reject(e));
     });
+    
     req2.on('error', (e) => reject(e));
     req2.setTimeout(10000, () => {
       req2.destroy();
