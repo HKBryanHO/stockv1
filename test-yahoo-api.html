@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Yahoo API Test</title>
+</head>
+<body>
+    <h1>Yahoo Finance API Test</h1>
+    <div id="results"></div>
+    
+    <script>
+        async function testYahooAPI() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<p>Testing Yahoo Finance API...</p>';
+            
+            try {
+                // Test 1: Health check
+                console.log('Testing health endpoint...');
+                const healthResponse = await fetch('https://www.bma-hk.com/api/health');
+                const healthData = await healthResponse.json();
+                results.innerHTML += `<p>✅ Health: ${JSON.stringify(healthData)}</p>`;
+                
+                // Test 2: Yahoo Quote
+                console.log('Testing Yahoo quote endpoint...');
+                const quoteResponse = await fetch('https://www.bma-hk.com/api/yahoo/quote?symbol=AAPL');
+                const quoteData = await quoteResponse.json();
+                results.innerHTML += `<p>✅ Quote: ${JSON.stringify(quoteData)}</p>`;
+                
+                // Test 3: Yahoo Chart
+                console.log('Testing Yahoo chart endpoint...');
+                const chartResponse = await fetch('https://www.bma-hk.com/api/yahoo/chart?symbol=AAPL&range=3mo&interval=1d');
+                const chartData = await chartResponse.json();
+                results.innerHTML += `<p>✅ Chart: ${JSON.stringify(chartData).substring(0, 200)}...</p>`;
+                
+            } catch (error) {
+                results.innerHTML += `<p>❌ Error: ${error.message}</p>`;
+                console.error('Test failed:', error);
+            }
+        }
+        
+        // Run test when page loads
+        window.onload = testYahooAPI;
+    </script>
+</body>
+</html>

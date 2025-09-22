@@ -838,6 +838,10 @@ class StockPredictionApp {
         this.showLoading(true);
         this.clearResults();
         this.showToast('正在同步 Yahoo 真實數據...', 'info');
+        
+        // Debug mode: log backend configuration
+        console.log('Backend Base URL:', this.backendBase);
+        console.log('API URL:', this.apiUrl);
 
         try {
             // Fetch Yahoo historical closes first
@@ -1762,14 +1766,36 @@ class StockPredictionApp {
     async fetchYahooQuote(symbol) {
         const fetchOnce = async () => {
             const url = `${this.backendBase}/api/yahoo/quote?symbol=${encodeURIComponent(symbol)}`;
-            const resp = await fetch(url).catch((e)=>{ console.log('quote fetch error', e); throw e; });
-            const data = await resp.json();
+            console.log(`Fetching Yahoo quote from: ${url}`);
+            
+            const resp = await fetch(url).catch((e)=>{ 
+                console.error('Quote fetch error:', e); 
+                throw new Error(`Network error: ${e.message}`);
+            });
+            
+            if (!resp.ok) {
+                console.error(`HTTP error: ${resp.status} ${resp.statusText}`);
+                throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+            }
+            
+            const data = await resp.json().catch((e) => {
+                console.error('JSON parse error:', e);
+                throw new Error('Invalid JSON response');
+            });
+            
+            console.log('Yahoo quote response:', data);
             const r = data?.quoteResponse?.result?.[0] || data?.quoteResponse?.result?.[0];
-            if (!r) throw new Error('No quote');
+            if (!r) {
+                console.error('No quote result found in response:', data);
+                throw new Error('No quote');
+            }
             const price = r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice;
             return { price: Number(price), currency: r.currency };
         };
-        return await this.withBackoff(fetchOnce, 3).catch(() => ({ price: NaN }));
+        return await this.withBackoff(fetchOnce, 3).catch((error) => { 
+            console.error('Yahoo quote fetch failed after retries:', error);
+            return { price: NaN }; 
+        });
     }
 
     async fetchYahooQuotesBatch(symbols) {
@@ -1797,10 +1823,29 @@ class StockPredictionApp {
         try { const db = await this.dbPromise; if (db) { const c = await db.get('historical', key); if (c && (now - (c.ts||0) < 3600*1000)) return c.data; } } catch (_) {}
         const fetchOnce = async () => {
             const url = `${this.backendBase}/api/yahoo/chart?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}&interval=1d`;
-            const resp = await fetch(url).catch((e)=>{ console.log('chart fetch error', e); throw e; });
-            const data = await resp.json();
+            console.log(`Fetching Yahoo chart data from: ${url}`);
+            
+            const resp = await fetch(url).catch((e)=>{ 
+                console.error('Chart fetch error:', e); 
+                throw new Error(`Network error: ${e.message}`);
+            });
+            
+            if (!resp.ok) {
+                console.error(`HTTP error: ${resp.status} ${resp.statusText}`);
+                throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+            }
+            
+            const data = await resp.json().catch((e) => {
+                console.error('JSON parse error:', e);
+                throw new Error('Invalid JSON response');
+            });
+            
+            console.log('Yahoo chart response:', data);
             const r = data?.chart?.result?.[0];
-            if (!r) throw new Error('no_result');
+            if (!r) {
+                console.error('No chart result found in response:', data);
+                throw new Error('no_result');
+            }
             const ts = r.timestamp || [];
             const q = r.indicators?.quote?.[0] || {};
             let closes = (r.indicators?.adjclose?.[0]?.adjclose || q.close || []).map(v => Number(v));
