@@ -1,9 +1,10 @@
-import express from 'express';
-import cors from 'cors';
-import https from 'https';
-import dotenv from 'dotenv';
-import http from 'http';
-import crypto from 'crypto';
+const express = require('express');
+const cors = require('cors');
+const https = require('https');
+const dotenv = require('dotenv');
+const http = require('http');
+const crypto = require('crypto');
+const zlib = require('zlib');
 
 dotenv.config();
 
@@ -170,13 +171,10 @@ function fetchAlphaJson(url) {
         
         // Handle gzip/deflate compression
         if (r.headers['content-encoding'] === 'gzip') {
-          const zlib = require('zlib');
           stream = r.pipe(zlib.createGunzip());
         } else if (r.headers['content-encoding'] === 'deflate') {
-          const zlib = require('zlib');
           stream = r.pipe(zlib.createInflate());
         } else if (r.headers['content-encoding'] === 'br') {
-          const zlib = require('zlib');
           stream = r.pipe(zlib.createBrotliDecompress());
         }
         
@@ -218,13 +216,10 @@ function fetchJson(url, extraHeaders = {}) {
       
       // Handle gzip/deflate compression
       if (r.headers['content-encoding'] === 'gzip') {
-        const zlib = require('zlib');
         stream = r.pipe(zlib.createGunzip());
       } else if (r.headers['content-encoding'] === 'deflate') {
-        const zlib = require('zlib');
         stream = r.pipe(zlib.createInflate());
       } else if (r.headers['content-encoding'] === 'br') {
-        const zlib = require('zlib');
         stream = r.pipe(zlib.createBrotliDecompress());
       }
       
@@ -270,6 +265,7 @@ async function tryFetchWithFallback(url) {
       }
       lastError = new Error(`Status ${res.status} from ${attemptUrl}`);
     } catch (e) {
+      console.error(`Error fetching ${attemptUrl}:`, e);
       lastError = e;
     }
   }
@@ -323,12 +319,19 @@ app.get('/api/alphavantage', async (req, res) => {
         cache.set(url, record);
         return record;
       })
+      .catch(err => {
+        console.error(`Failed to fetch from Alpha Vantage URL: ${url}`, err);
+        pending.delete(url);
+        // Return an error structure that the caller can handle
+        return { ts: Date.now(), status: 502, body: JSON.stringify({ error: 'upstream_fetch_failed', details: err.message }) };
+      })
       .finally(() => pending.delete(url));
     pending.set(url, p);
     const result = await p;
     res.setHeader('Content-Type', 'application/json');
     return res.status(result.status).send(result.body);
   } catch (e) {
+    console.error('Error in /api/alphavantage:', e);
     return res.status(500).json({ error: (e && e.message) || 'Proxy error' });
   }
 });
@@ -351,23 +354,28 @@ app.get('/api/market/insights', async (req, res) => {
     const fetchChartYahoo = async (symbolRaw) => {
       const symbol = normalizeSymbol(symbolRaw);
       const u1 = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=6mo&interval=1d&events=history&includeAdjustedClose=true`;
-      let { status, body } = await tryFetchWithFallback(u1);
-      if (status !== 200 || !body) {
-        const u2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=6mo&interval=1d&events=history&includeAdjustedClose=true`;
-        const r2 = await tryFetchWithFallback(u2);
-        status = r2.status; body = r2.body;
+      try {
+        let { status, body } = await tryFetchWithFallback(u1);
+        if (status !== 200 || !body) {
+          const u2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=6mo&interval=1d&events=history&includeAdjustedClose=true`;
+          const r2 = await tryFetchWithFallback(u2);
+          status = r2.status; body = r2.body;
+        }
+        if (status !== 200 || !body) return { ok: false, error: `Failed to fetch chart data for ${symbol}` };
+        let j;
+        try { j = JSON.parse(body); } catch { return { ok: false, error: 'Invalid JSON in chart response' }; }
+        const r = j && j.chart && j.chart.result && j.chart.result[0];
+        if (!r) return { ok: false, error: 'Unexpected chart data structure' };
+        const timestamps = r.timestamp || [];
+        const quote = r.indicators && r.indicators.quote && r.indicators.quote[0] || {};
+        const closes = (quote.close || []).map((v) => Number(v));
+        const volumes = (quote.volume || []).map((v) => Number(v || 0));
+        const dates = timestamps.map((t) => new Date(t * 1000).toISOString().slice(0,10));
+        return { ok: true, dates, closes, volumes };
+      } catch (e) {
+        console.error(`Exception in fetchChartYahoo for ${symbol}:`, e);
+        return { ok: false, error: e.message };
       }
-      if (status !== 200 || !body) return { ok: false };
-      let j;
-      try { j = JSON.parse(body); } catch { return { ok: false }; }
-      const r = j && j.chart && j.chart.result && j.chart.result[0];
-      if (!r) return { ok: false };
-      const timestamps = r.timestamp || [];
-      const quote = r.indicators && r.indicators.quote && r.indicators.quote[0] || {};
-      const closes = (quote.close || []).map((v) => Number(v));
-      const volumes = (quote.volume || []).map((v) => Number(v || 0));
-      const dates = timestamps.map((t) => new Date(t * 1000).toISOString().slice(0,10));
-      return { ok: true, dates, closes, volumes };
     };
 
     const fetchQuoteYahoo = async (symbolRaw) => {
@@ -398,6 +406,7 @@ app.get('/api/market/insights', async (req, res) => {
 
     return res.json({ symbols, series, updatedAt: new Date().toISOString() });
   } catch (e) {
+    console.error('Error in /api/market/insights:', e);
     return res.status(500).json({ error: e.message || 'insights_error' });
   }
 });
@@ -423,10 +432,14 @@ async function refreshWatchlist() {
         const prevClose = prev ? parseFloat(ts[prev]['4. close']) : lastClose;
         const dailyReturnPct = prevClose ? ((lastClose / prevClose - 1) * 100) : 0;
         return { symbol: sym, ok: true, lastClose, dailyReturnPct };
-      } catch {
+      } catch (e) {
+        console.error(`Error processing watchlist item ${sym}:`, e);
         return { symbol: sym, ok: false };
       }
-    }).catch(() => ({ symbol: sym, ok: false }));
+    }).catch((err) => {
+        console.error(`Error fetching watchlist item ${sym}:`, err);
+        return ({ symbol: sym, ok: false })
+    });
   });
 
   monitorState.items = await Promise.all(promises);
@@ -471,6 +484,7 @@ app.get('/api/yahoo/quote', async (req, res) => {
         }
         lastError = `Status ${status}`;
       } catch (e) {
+        console.error(`Error fetching Yahoo quote for ${symbol} from ${endpoint}:`, e);
         lastError = e.message;
         continue;
       }
@@ -494,6 +508,7 @@ app.get('/api/yahoo/quote', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).send(JSON.stringify(mockResponse));
   } catch (e) {
+    console.error(`Error in /api/yahoo/quote for ${req.query.symbol}:`, e);
     return res.status(500).json({ error: e.message || 'yahoo_quote_error' });
   }
 });
@@ -530,6 +545,7 @@ app.get('/api/yahoo/chart', async (req, res) => {
         }
         lastError = `Status ${status}`;
       } catch (e) {
+        console.error(`Error fetching Yahoo chart for ${symbol} from ${endpoint}:`, e);
         lastError = e.message;
         continue;
       }
@@ -560,6 +576,7 @@ app.get('/api/yahoo/chart', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).send(JSON.stringify(mockResponse));
   } catch (e) {
+    console.error(`Error in /api/yahoo/chart for ${req.query.symbol}:`, e);
     return res.status(500).json({ error: e.message || 'yahoo_chart_error' });
   }
 });
@@ -639,6 +656,11 @@ app.post('/api/grok/chat', async (req, res) => {
       req2.on('error', reject);
       req2.write(requestPayload);
       req2.end();
+    }).catch(err => {
+        console.error('LLM chat request failed:', err);
+        grokPending.delete(coalesceKey);
+        // Return an error structure that the caller can handle
+        return { status: 502, body: JSON.stringify({ error: 'upstream_request_failed', details: err.message }), headers: {'content-type': 'application/json'} };
     }).finally(() => grokPending.delete(coalesceKey));
     grokPending.set(coalesceKey, p);
     const forward = await p;
@@ -648,6 +670,7 @@ app.post('/api/grok/chat', async (req, res) => {
     // OpenRouter-only setup; no fallback needed
     return res.status(forward.status).send(forward.body);
   } catch (e) {
+    console.error('Error in /api/grok/chat:', e);
     return res.status(500).json({ error: e && e.message ? e.message : 'llm_proxy_error' });
   }
 });
@@ -757,6 +780,7 @@ app.post('/api/grok/stream', async (req, res) => {
       try { upstream.destroy(); } catch {}
     });
   } catch (e) {
+    console.error('Error in /api/grok/stream:', e);
     try {
       res.write('event: error\n');
       res.write(`data: ${e && e.message ? e.message : 'llm_stream_error'}\n\n`);
@@ -836,6 +860,7 @@ app.post('/api/grok/analyze', async (req, res) => {
       return res.status(response.status).send(response.body);
     }
   } catch (e) {
+    console.error('Error in /api/grok/analyze:', e);
     return res.status(500).json({ error: e && e.message ? e.message : 'llm_analyze_error' });
   }
 });
@@ -871,32 +896,37 @@ app.post('/api/grok/screener', async (req, res) => {
     // Fetch lightweight metrics via Yahoo for each symbol
     async function fetchQuote(sym) {
       const u1 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-      let { status, body } = await tryFetchWithFallback(u1);
-      if (status !== 200 || !body) {
-        const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-        const r2 = await tryFetchWithFallback(u2);
-        status = r2.status; body = r2.body;
-      }
       try {
-        const j = JSON.parse(body || '{}');
-        const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
-        if (!r) return { symbol: sym, ok: false };
-        return {
-          ok: true,
-          symbol: r.symbol,
-          shortName: r.shortName,
-          price: Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice),
-          changePercent: Number(r.regularMarketChangePercent ?? 0),
-          marketCap: Number(r.marketCap ?? 0),
-          trailingPE: Number(r.trailingPE ?? NaN),
-          forwardPE: Number(r.forwardPE ?? NaN),
-          pegRatio: Number(r.pegRatio ?? NaN),
-          beta: Number(r.beta ?? NaN),
-          currency: r.currency || 'USD',
-          sector: r.sector || '',
-          industry: r.industry || ''
-        };
-      } catch {
+        let { status, body } = await tryFetchWithFallback(u1);
+        if (status !== 200 || !body) {
+          const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+          const r2 = await tryFetchWithFallback(u2);
+          status = r2.status; body = r2.body;
+        }
+        try {
+          const j = JSON.parse(body || '{}');
+          const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
+          if (!r) return { symbol: sym, ok: false };
+          return {
+            ok: true,
+            symbol: r.symbol,
+            shortName: r.shortName,
+            price: Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice),
+            changePercent: Number(r.regularMarketChangePercent ?? 0),
+            marketCap: Number(r.marketCap ?? 0),
+            trailingPE: Number(r.trailingPE ?? NaN),
+            forwardPE: Number(r.forwardPE ?? NaN),
+            pegRatio: Number(r.pegRatio ?? NaN),
+            beta: Number(r.beta ?? NaN),
+            currency: r.currency || 'USD',
+            sector: r.sector || '',
+            industry: r.industry || ''
+          };
+        } catch {
+          return { symbol: sym, ok: false };
+        }
+      } catch (e) {
+        console.error(`Exception in fetchQuote for screener symbol ${sym}:`, e);
         return { symbol: sym, ok: false };
       }
     }
@@ -954,6 +984,7 @@ app.post('/api/grok/screener', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).send(outStr);
   } catch (e) {
+    console.error('Error in /api/grok/screener:', e);
     return res.status(500).json({ error: e && e.message ? e.message : 'llm_screener_error' });
   }
 });
@@ -1052,6 +1083,7 @@ app.post('/api/grok/news-insights', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).send(outStr);
   } catch (e) {
+    console.error('Error in /api/grok/news-insights:', e);
     return res.status(500).json({ error: e && e.message ? e.message : 'llm_news_error' });
   }
 });
@@ -1084,32 +1116,37 @@ app.post('/api/grok/peers-compare', async (req, res) => {
 
     async function fetchQuote(sym) {
       const u1 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-      let { status, body } = await tryFetchWithFallback(u1);
-      if (status !== 200 || !body) {
-        const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-        const r2 = await tryFetchWithFallback(u2);
-        status = r2.status; body = r2.body;
-      }
       try {
-        const j = JSON.parse(body || '{}');
-        const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
-        if (!r) return { symbol: sym, ok: false };
-        return {
-          ok: true,
-          symbol: r.symbol,
-          shortName: r.shortName,
-          sector: r.sector || '',
-          industry: r.industry || '',
-          price: Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice),
-          changePercent: Number(r.regularMarketChangePercent ?? 0),
-          marketCap: Number(r.marketCap ?? 0),
-          trailingPE: Number(r.trailingPE ?? NaN),
-          forwardPE: Number(r.forwardPE ?? NaN),
-          pegRatio: Number(r.pegRatio ?? NaN),
-          beta: Number(r.beta ?? NaN),
-          dividendYield: Number(r.trailingAnnualDividendYield ?? NaN)
-        };
-      } catch {
+        let { status, body } = await tryFetchWithFallback(u1);
+        if (status !== 200 || !body) {
+          const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+          const r2 = await tryFetchWithFallback(u2);
+          status = r2.status; body = r2.body;
+        }
+        try {
+          const j = JSON.parse(body || '{}');
+          const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
+          if (!r) return { symbol: sym, ok: false };
+          return {
+            ok: true,
+            symbol: r.symbol,
+            shortName: r.shortName,
+            sector: r.sector || '',
+            industry: r.industry || '',
+            price: Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice),
+            changePercent: Number(r.regularMarketChangePercent ?? 0),
+            marketCap: Number(r.marketCap ?? 0),
+            trailingPE: Number(r.trailingPE ?? NaN),
+            forwardPE: Number(r.forwardPE ?? NaN),
+            pegRatio: Number(r.pegRatio ?? NaN),
+            beta: Number(r.beta ?? NaN),
+            dividendYield: Number(r.trailingAnnualDividendYield ?? NaN)
+          };
+        } catch {
+          return { symbol: sym, ok: false };
+        }
+      } catch (e) {
+        console.error(`Exception in fetchQuote for peers-compare symbol ${sym}:`, e);
         return { symbol: sym, ok: false };
       }
     }
@@ -1163,6 +1200,7 @@ app.post('/api/grok/peers-compare', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).send(outStr);
   } catch (e) {
+    console.error('Error in /api/grok/peers-compare:', e);
     return res.status(500).json({ error: e && e.message ? e.message : 'llm_peers_error' });
   }
 });
@@ -1190,25 +1228,30 @@ app.post('/api/grok/portfolio-doctor', async (req, res) => {
 
     async function fetchQuote(sym) {
       const u1 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-      let { status, body } = await tryFetchWithFallback(u1);
-      if (status !== 200 || !body) {
-        const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-        const r2 = await tryFetchWithFallback(u2);
-        status = r2.status; body = r2.body;
-      }
       try {
-        const j = JSON.parse(body || '{}');
-        const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
-        if (!r) return { symbol: sym, ok: false };
-        return {
-          ok: true,
-          symbol: r.symbol,
-          price: Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice),
-          beta: Number(r.beta ?? NaN),
-          sector: r.sector || '',
-          industry: r.industry || ''
-        };
-      } catch {
+        let { status, body } = await tryFetchWithFallback(u1);
+        if (status !== 200 || !body) {
+          const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+          const r2 = await tryFetchWithFallback(u2);
+          status = r2.status; body = r2.body;
+        }
+        try {
+          const j = JSON.parse(body || '{}');
+          const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
+          if (!r) return { symbol: sym, ok: false };
+          return {
+            ok: true,
+            symbol: r.symbol,
+            price: Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice),
+            beta: Number(r.beta ?? NaN),
+            sector: r.sector || '',
+            industry: r.industry || ''
+          };
+        } catch {
+          return { symbol: sym, ok: false };
+        }
+      } catch (e) {
+        console.error(`Exception in fetchQuote for portfolio-doctor symbol ${sym}:`, e);
         return { symbol: sym, ok: false };
       }
     }
@@ -1264,6 +1307,7 @@ app.post('/api/grok/portfolio-doctor', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).send(outStr);
   } catch (e) {
+    console.error('Error in /api/grok/portfolio-doctor:', e);
     return res.status(500).json({ error: e && e.message ? e.message : 'llm_portfolio_error' });
   }
 });
@@ -1286,6 +1330,7 @@ app.get('/api/x/sentiment', async (req, res) => {
     const score = total > 0 ? Math.max(-1, Math.min(1, (pos - neg) / total)) : 0;
     return res.json({ symbol, score, total, pos, neg, source: 'duckduckgo' });
   } catch (e) {
+    console.error(`Error in /api/x/sentiment for ${req.query.symbol}:`, e);
     return res.status(200).json({ symbol: (req.query.symbol || '').toString(), score: null, error: e.message || 'sentiment_error' });
   }
 });
@@ -1318,6 +1363,7 @@ app.get('/api/news/sentiment', async (req, res) => {
     const score = total > 0 ? Math.max(-1, Math.min(1, (pos - neg) / total)) : 0;
     return res.json({ symbol, headlines, score, pos, neg, total, source: 'duckduckgo' });
   } catch (e) {
+    console.error(`Error in /api/news/sentiment for ${req.query.symbol}:`, e);
     return res.status(200).json({ symbol: (req.query.symbol || '').toString(), headlines: [], score: null, error: e.message || 'news_error' });
   }
 });

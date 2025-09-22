@@ -1,27 +1,24 @@
 {
-  "name": "quant-proxy",
+  "name": "stock-analysis-server",
   "version": "1.0.0",
-  "description": "Alpha Vantage proxy with optional simulations and monitor endpoints",
+  "description": "Stock analysis server",
   "main": "server.js",
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "start:optimized": "node server-optimized.js",
-    "dev": "node server-optimized.js",
-    "build": "echo 'No build step required for Node.js'",
-    "test": "echo 'No tests specified'",
-    "docker:build": "docker build -t stock-predictor .",
-    "docker:run": "docker run -p 3001:3001 -e ALPHA_VANTAGE_KEY=$ALPHA_VANTAGE_KEY stock-predictor",
-    "docker:compose": "docker-compose up -d",
-    "docker:logs": "docker-compose logs -f",
-    "docker:stop": "docker-compose down"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "redis": "^4.6.12",
-    "mathjs": "^12.2.0",
-    "node-cron": "^3.0.3"
+    "https": "^1.0.0",
+    "http": "^0.0.1-security",
+    "mathjs": "^12.4.2",
+    "node-cron": "^3.0.3",
+    "redis": "^4.6.13"
   }
 }
