@@ -739,7 +739,14 @@ app.get('/api/fmp/quote', async (req, res) => {
       return res.status(400).json({ error: 'Symbol parameter required' });
     }
     if (!FMP_KEY) {
-      return res.status(503).json({ error: 'FMP API key not configured' });
+      return res.status(503).json({ 
+        error: 'FMP API key not configured',
+        debug: {
+          key_exists: !!FMP_KEY,
+          key_length: FMP_KEY ? FMP_KEY.length : 0,
+          env_keys: Object.keys(process.env).filter(k => k.includes('API'))
+        }
+      });
     }
     
     const price = await fetchQuoteFMP(symbol);
@@ -750,7 +757,11 @@ app.get('/api/fmp/quote', async (req, res) => {
     }
   } catch (e) {
     console.error('Error in /api/fmp/quote:', e);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: e.message,
+      stack: e.stack
+    });
   }
 });
 
@@ -761,7 +772,14 @@ app.get('/api/polygon/quote', async (req, res) => {
       return res.status(400).json({ error: 'Symbol parameter required' });
     }
     if (!POLYGON_KEY) {
-      return res.status(503).json({ error: 'Polygon API key not configured' });
+      return res.status(503).json({ 
+        error: 'Polygon API key not configured',
+        debug: {
+          key_exists: !!POLYGON_KEY,
+          key_length: POLYGON_KEY ? POLYGON_KEY.length : 0,
+          env_keys: Object.keys(process.env).filter(k => k.includes('API'))
+        }
+      });
     }
     
     const price = await fetchQuotePolygon(symbol);
@@ -772,7 +790,11 @@ app.get('/api/polygon/quote', async (req, res) => {
     }
   } catch (e) {
     console.error('Error in /api/polygon/quote:', e);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: e.message,
+      stack: e.stack
+    });
   }
 });
 
@@ -787,11 +809,24 @@ app.get('/api/quote/enhanced', async (req, res) => {
     if (isFinite(price)) {
       res.json({ symbol, price, source: 'enhanced_fallback' });
     } else {
-      res.status(404).json({ error: 'Quote not found from any source' });
+      res.status(404).json({ 
+        error: 'Quote not found from any source',
+        debug: {
+          symbol,
+          finnhub_configured: !!FINNHUB_KEY,
+          fmp_configured: !!FMP_KEY,
+          polygon_configured: !!POLYGON_KEY,
+          alpha_configured: !!ALPHA_KEY
+        }
+      });
     }
   } catch (e) {
     console.error('Error in /api/quote/enhanced:', e);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: e.message,
+      stack: e.stack
+    });
   }
 });
 
