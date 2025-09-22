@@ -241,6 +241,116 @@ function fetchJson(url, extraHeaders = {}) {
   });
 }
 
+// Global API integration functions
+const normalizeSymbol = (s) => {
+  if (!s) return s;
+  const map = { 'TSMC': 'TSM' };
+  if (map[s]) return map[s];
+  return s;
+};
+
+const fetchQuoteFinnhub = async (symbolRaw) => {
+  const symbol = normalizeSymbol(symbolRaw);
+  if (!FINNHUB_KEY) return NaN;
+  const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_KEY}`;
+  try {
+    const { body } = await fetchJson(url);
+    const j = JSON.parse(body);
+    const price = j && j.c ? parseFloat(j.c) : undefined;
+    return isFinite(price) ? Number(price) : NaN;
+  } catch (e) {
+    console.error(`Failed to fetch Finnhub quote for ${symbol}:`, e);
+    return NaN;
+  }
+};
+
+const fetchQuoteFMP = async (symbolRaw) => {
+  const symbol = normalizeSymbol(symbolRaw);
+  if (!FMP_KEY) return NaN;
+  const url = `https://financialmodelingprep.com/api/v3/quote/${encodeURIComponent(symbol)}?apikey=${FMP_KEY}`;
+  try {
+    const { body } = await fetchJson(url);
+    const j = JSON.parse(body);
+    const price = j && j[0] && j[0].price ? parseFloat(j[0].price) : undefined;
+    return isFinite(price) ? Number(price) : NaN;
+  } catch (e) {
+    console.error(`Failed to fetch FMP quote for ${symbol}:`, e);
+    return NaN;
+  }
+};
+
+const fetchQuotePolygon = async (symbolRaw) => {
+  const symbol = normalizeSymbol(symbolRaw);
+  if (!POLYGON_KEY) return NaN;
+  const url = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(symbol)}/prev?adjusted=true&apikey=${POLYGON_KEY}`;
+  try {
+    const { body } = await fetchJson(url);
+    const j = JSON.parse(body);
+    const price = j && j.results && j.results[0] && j.results[0].c ? parseFloat(j.results[0].c) : undefined;
+    return isFinite(price) ? Number(price) : NaN;
+  } catch (e) {
+    console.error(`Failed to fetch Polygon quote for ${symbol}:`, e);
+    return NaN;
+  }
+};
+
+const fetchQuoteYahoo = async (symbolRaw) => {
+  const symbol = normalizeSymbol(symbolRaw);
+  const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${ALPHA_KEY}`;
+  try {
+    const { body } = await fetchJson(url);
+    const j = JSON.parse(body);
+    const r = j && j['Global Quote'];
+    const price = r ? parseFloat(r['05. price']) : undefined;
+    return isFinite(price) ? Number(price) : NaN;
+  } catch (e) {
+    console.error(`Failed to fetch or parse quote for ${symbol}:`, e);
+    return NaN;
+  }
+};
+
+// Enhanced quote fetching with fallback chain
+const fetchQuoteWithFallback = async (symbolRaw) => {
+  const symbol = normalizeSymbol(symbolRaw);
+  
+  // Try Finnhub first (most reliable for real-time)
+  if (FINNHUB_KEY) {
+    const finnhubPrice = await fetchQuoteFinnhub(symbol);
+    if (isFinite(finnhubPrice)) {
+      console.log(`✓ Finnhub quote for ${symbol}: $${finnhubPrice}`);
+      return finnhubPrice;
+    }
+  }
+  
+  // Try FMP as second option
+  if (FMP_KEY) {
+    const fmpPrice = await fetchQuoteFMP(symbol);
+    if (isFinite(fmpPrice)) {
+      console.log(`✓ FMP quote for ${symbol}: $${fmpPrice}`);
+      return fmpPrice;
+    }
+  }
+  
+  // Try Polygon as third option
+  if (POLYGON_KEY) {
+    const polygonPrice = await fetchQuotePolygon(symbol);
+    if (isFinite(polygonPrice)) {
+      console.log(`✓ Polygon quote for ${symbol}: $${polygonPrice}`);
+      return polygonPrice;
+    }
+  }
+  
+  // Fallback to Alpha Vantage
+  const alphaPrice = await fetchQuoteYahoo(symbol);
+  if (isFinite(alphaPrice)) {
+    console.log(`✓ Alpha Vantage quote for ${symbol}: $${alphaPrice}`);
+    return alphaPrice;
+  }
+  
+  console.error(`✗ All quote sources failed for ${symbol}`);
+  return NaN;
+};
+
 const CORS_PROXIES = [
   'https://cors.isomorphic-git.org/',
   'https://r.jina.ai/'
@@ -339,108 +449,13 @@ app.get('/api/alphavantage', async (req, res) => {
   }
 });
 
-// Batch market insights: unified OHLCV (Alpha) + live price (Yahoo)
+// Batch market insights: unified OHLCV (Alpha) + live price (Enhanced APIs)
 app.get('/api/market/insights', async (req, res) => {
   try {
     const symbolsParam = (req.query.symbols || '').toString();
     const symbols = symbolsParam
       ? symbolsParam.split(',').map((s) => s.trim()).filter(Boolean)
       : ['NVDA','PLTR','MSFT','GOOGL','9988.HK','0700.HK','AVGO','AMD','IONQ','LLY','ABBV'];
-
-    const normalizeSymbol = (s) => {
-      if (!s) return s;
-      const map = { 'TSMC': 'TSM' };
-      if (map[s]) return map[s];
-      return s;
-    };
-
-    // New API integration functions
-    const fetchQuoteFinnhub = async (symbolRaw) => {
-      const symbol = normalizeSymbol(symbolRaw);
-      if (!FINNHUB_KEY) return NaN;
-      const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_KEY}`;
-      try {
-        const { body } = await fetchJson(url);
-        const j = JSON.parse(body);
-        const price = j && j.c ? parseFloat(j.c) : undefined;
-        return isFinite(price) ? Number(price) : NaN;
-      } catch (e) {
-        console.error(`Failed to fetch Finnhub quote for ${symbol}:`, e);
-        return NaN;
-      }
-    };
-
-    const fetchQuoteFMP = async (symbolRaw) => {
-      const symbol = normalizeSymbol(symbolRaw);
-      if (!FMP_KEY) return NaN;
-      const url = `https://financialmodelingprep.com/api/v3/quote/${encodeURIComponent(symbol)}?apikey=${FMP_KEY}`;
-      try {
-        const { body } = await fetchJson(url);
-        const j = JSON.parse(body);
-        const price = j && j[0] && j[0].price ? parseFloat(j[0].price) : undefined;
-        return isFinite(price) ? Number(price) : NaN;
-      } catch (e) {
-        console.error(`Failed to fetch FMP quote for ${symbol}:`, e);
-        return NaN;
-      }
-    };
-
-    const fetchQuotePolygon = async (symbolRaw) => {
-      const symbol = normalizeSymbol(symbolRaw);
-      if (!POLYGON_KEY) return NaN;
-      const url = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(symbol)}/prev?adjusted=true&apikey=${POLYGON_KEY}`;
-      try {
-        const { body } = await fetchJson(url);
-        const j = JSON.parse(body);
-        const price = j && j.results && j.results[0] && j.results[0].c ? parseFloat(j.results[0].c) : undefined;
-        return isFinite(price) ? Number(price) : NaN;
-      } catch (e) {
-        console.error(`Failed to fetch Polygon quote for ${symbol}:`, e);
-        return NaN;
-      }
-    };
-
-    // Enhanced quote fetching with fallback chain
-    const fetchQuoteWithFallback = async (symbolRaw) => {
-      const symbol = normalizeSymbol(symbolRaw);
-      
-      // Try Finnhub first (most reliable for real-time)
-      if (FINNHUB_KEY) {
-        const finnhubPrice = await fetchQuoteFinnhub(symbol);
-        if (isFinite(finnhubPrice)) {
-          console.log(`✓ Finnhub quote for ${symbol}: $${finnhubPrice}`);
-          return finnhubPrice;
-        }
-      }
-      
-      // Try FMP as second option
-      if (FMP_KEY) {
-        const fmpPrice = await fetchQuoteFMP(symbol);
-        if (isFinite(fmpPrice)) {
-          console.log(`✓ FMP quote for ${symbol}: $${fmpPrice}`);
-          return fmpPrice;
-        }
-      }
-      
-      // Try Polygon as third option
-      if (POLYGON_KEY) {
-        const polygonPrice = await fetchQuotePolygon(symbol);
-        if (isFinite(polygonPrice)) {
-          console.log(`✓ Polygon quote for ${symbol}: $${polygonPrice}`);
-          return polygonPrice;
-        }
-      }
-      
-      // Fallback to Alpha Vantage
-      const alphaPrice = await fetchQuoteYahoo(symbol);
-      if (isFinite(alphaPrice)) {
-        console.log(`✓ Alpha Vantage quote for ${symbol}: $${alphaPrice}`);
-        return alphaPrice;
-      }
-      
-      console.error(`✗ All quote sources failed for ${symbol}`);
-      return NaN;
-    };
 
     const fetchChartYahoo = async (symbolRaw) => {
       const symbol = normalizeSymbol(symbolRaw);
@@ -461,21 +476,6 @@ app.get('/api/market/insights', async (req, res) => {
       } catch (e) {
         console.error(`Exception in fetchChartYahoo for ${symbol}:`, e);
         return { ok: false, error: e.message };
-      }
-    };
-
-    const fetchQuoteYahoo = async (symbolRaw) => {
-      const symbol = normalizeSymbol(symbolRaw);
-      const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${ALPHA_KEY}`;
-      try {
-        const { body } = await fetchJson(url);
-        const j = JSON.parse(body);
-        const r = j && j['Global Quote'];
-        const price = r ? parseFloat(r['05. price']) : undefined;
-        return isFinite(price) ? Number(price) : NaN;
-      } catch (e) {
-        console.error(`Failed to fetch or parse quote for ${symbol}:`, e);
-        return NaN;
       }
     };
 
