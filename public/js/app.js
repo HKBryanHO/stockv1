@@ -860,8 +860,10 @@ class StockPredictionApp {
         console.log('Backend Base URL:', this.backendBase);
         console.log('API URL:', this.apiUrl);
         
-        // Test backend connectivity
-        this.testBackendConnectivity();
+        // Test backend connectivity (optional)
+        if (typeof this.testBackendConnectivity === 'function') {
+            try { await this.testBackendConnectivity(); } catch (_) {}
+        }
 
         try {
             // Fetch Yahoo historical closes first
@@ -4409,9 +4411,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             drawCanvas.addEventListener('mouseup', () => { if (dragging) { dragging = false; saveDrawingsForSymbol(); } });
             window.addEventListener('keydown', (e) => {
-                if (e.key.toLowerCase() === 't') { drawMode = 'trend'; }
-                else if (e.key.toLowerCase() === 'h') { drawMode = 'hline'; }
-                else if (e.key.toLowerCase() === 'f') { drawMode = 'fibo'; }
+                const k = (e && typeof e.key === 'string') ? e.key : '';
+                if (k && k.toLowerCase && k.toLowerCase() === 't') { drawMode = 'trend'; }
+                else if (k && k.toLowerCase && k.toLowerCase() === 'h') { drawMode = 'hline'; }
+                else if (k && k.toLowerCase && k.toLowerCase() === 'f') { drawMode = 'fibo'; }
                 else if (e.key === 'Escape') { drawMode = null; currentPoints = []; redraw(); }
                 else if (e.key === 'Delete') { if (selectedIdx>=0) { drawings.splice(selectedIdx,1); selectedIdx=-1; } else { drawings.pop(); } saveDrawingsForSymbol(); redraw(); }
             });
