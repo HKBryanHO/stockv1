@@ -12,8 +12,12 @@ class StockPredictionApp {
                     return window.location.origin;
                 }
             } catch(_) {}
-            return 'https://your-api.onrender.com';
+            return 'https://www.bma-hk.com';
         })();
+        
+        // Add fallback to localhost if remote server fails
+        this.originalBackendBase = this.backendBase;
+        this.fallbackBackendBase = window.location.origin;
         // Alpha Vantage proxy base (backend only; no frontend key)
         this.apiUrl = `${this.backendBase}/api/alphavantage`;
         this.charts = {};
@@ -842,6 +846,9 @@ class StockPredictionApp {
         // Debug mode: log backend configuration
         console.log('Backend Base URL:', this.backendBase);
         console.log('API URL:', this.apiUrl);
+        
+        // Test backend connectivity
+        this.testBackendConnectivity();
 
         try {
             // Fetch Yahoo historical closes first
@@ -1925,6 +1932,7 @@ class StockPredictionApp {
             
             // Generate mock data as last resort
             console.warn(`Generating mock data for ${symbol} - API unavailable`);
+            this.showToast('使用模擬數據 - 後端服務器不可用', 'warning', 5000);
             return this.generateMockData(symbol);
         } catch (error) {
             console.error('Fallback data generation failed:', error);
@@ -1938,26 +1946,57 @@ class StockPredictionApp {
         const dates = [];
         const closes = [];
         const volumes = [];
+        const opens = [];
+        const highs = [];
+        const lows = [];
         
         const basePrice = this.getSymbolBasePrice(symbol);
         let currentPrice = basePrice;
+        
+        // Use symbol as seed for consistent mock data
+        const seed = symbol.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+        let random = seed;
         
         for (let i = days - 1; i >= 0; i--) {
             const date = new Date();
             date.setDate(date.getDate() - i);
             dates.push(date.toISOString().slice(0, 10));
             
-            // Generate realistic price movement
-            const change = (Math.random() - 0.5) * 0.05; // ±2.5% daily change
-            currentPrice *= (1 + change);
-            closes.push(Number(currentPrice.toFixed(2)));
+            // Generate realistic price movement with trend
+            random = (random * 9301 + 49297) % 233280; // Simple PRNG
+            const trend = Math.sin(i / 30) * 0.02; // Long-term trend
+            const volatility = (random / 233280 - 0.5) * 0.04; // ±2% daily volatility
+            const change = trend + volatility;
             
-            // Generate volume
-            const volume = Math.floor(Math.random() * 10000000) + 1000000;
+            currentPrice *= (1 + change);
+            const open = currentPrice * (1 + (random / 233280 - 0.5) * 0.01);
+            const high = Math.max(open, currentPrice) * (1 + Math.abs(random / 233280 - 0.5) * 0.02);
+            const low = Math.min(open, currentPrice) * (1 - Math.abs(random / 233280 - 0.5) * 0.02);
+            
+            closes.push(Number(currentPrice.toFixed(2)));
+            opens.push(Number(open.toFixed(2)));
+            highs.push(Number(high.toFixed(2)));
+            lows.push(Number(low.toFixed(2)));
+            
+            // Generate volume with some correlation to price movement
+            const baseVolume = this.getSymbolBaseVolume(symbol);
+            const volumeMultiplier = 1 + Math.abs(change) * 2; // Higher volume on big moves
+            const volume = Math.floor(baseVolume * volumeMultiplier * (0.5 + random / 233280));
             volumes.push(volume);
         }
         
-        return { dates, closes, volumes };
+        return { dates, closes, volumes, opens, highs, lows };
+    }
+    
+    getSymbolBaseVolume(symbol) {
+        // Base volumes for different symbols
+        const baseVolumes = {
+            'AAPL': 50000000, 'MSFT': 30000000, 'GOOGL': 20000000, 'AMZN': 30000000, 'TSLA': 80000000,
+            'META': 20000000, 'NVDA': 40000000, 'NFLX': 3000000, 'AMD': 50000000, 'INTC': 25000000,
+            '0700.HK': 20000000, '0941.HK': 15000000, '1299.HK': 10000000, '0388.HK': 8000000,
+            '^GSPC': 1000000000, '^DJI': 500000000, '^IXIC': 2000000000
+        };
+        return baseVolumes[symbol] || 10000000; // Default volume
     }
     
     getSymbolBasePrice(symbol) {
@@ -2398,10 +2437,66 @@ class DataFetcher {
         try {
             const response = await fetch(url, { signal: controller.signal });
             clearTimeout(id);
+            
+            // Check for 502 Bad Gateway and switch to fallback
+            if (response.status === 502 && this.backendBase === this.originalBackendBase) {
+                console.warn('Remote server returned 502, switching to local server');
+                this.switchToFallbackServer();
+                // Retry with fallback server
+                const fallbackUrl = url.replace(this.originalBackendBase, this.fallbackBackendBase);
+                return await this.fetchWithTimeout(fallbackUrl, timeout);
+            }
+            
             return response;
         } catch (error) {
             clearTimeout(id);
+            
+            // If network error and we haven't tried fallback yet
+            if (this.backendBase === this.originalBackendBase && 
+                (error.name === 'AbortError' || error.message.includes('Failed to fetch'))) {
+                console.warn('Network error, switching to local server');
+                this.switchToFallbackServer();
+                // Retry with fallback server
+                const fallbackUrl = url.replace(this.originalBackendBase, this.fallbackBackendBase);
+                return await this.fetchWithTimeout(fallbackUrl, timeout);
+            }
+            
             throw error;
+        }
+    }
+    
+    switchToFallbackServer() {
+        if (this.backendBase === this.originalBackendBase) {
+            this.backendBase = this.fallbackBackendBase;
+            this.apiUrl = `${this.backendBase}/api/alphavantage`;
+            console.log('Switched to fallback server:', this.backendBase);
+            this.showToast('已切換到本地服務器', 'info', 3000);
+        }
+    }
+    
+    async testBackendConnectivity() {
+        try {
+            const response = await fetch(`${this.backendBase}/api/health`, { 
+                method: 'GET',
+                timeout: 5000 
+            });
+            
+            if (response.ok) {
+                console.log('Backend server is accessible');
+                return true;
+            } else {
+                console.warn('Backend server returned error:', response.status);
+                if (response.status === 502 && this.backendBase === this.originalBackendBase) {
+                    this.switchToFallbackServer();
+                }
+                return false;
+            }
+        } catch (error) {
+            console.warn('Backend server is not accessible:', error.message);
+            if (this.backendBase === this.originalBackendBase) {
+                this.switchToFallbackServer();
+            }
+            return false;
         }
     }
 }
