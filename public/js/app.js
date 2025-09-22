@@ -20,6 +20,19 @@ class StockPredictionApp {
         this.fallbackBackendBase = window.location.origin;
         // Alpha Vantage proxy base (backend only; no frontend key)
         this.apiUrl = `${this.backendBase}/api/alphavantage`;
+        
+        // Alternative data sources when Yahoo Finance fails
+        this.alternativeDataSources = {
+            alphaVantage: {
+                enabled: true,
+                baseUrl: 'https://www.alphavantage.co/query',
+                // Note: API key should be set on the server side
+            },
+            twelveData: {
+                enabled: false, // Can be enabled if API key is available
+                baseUrl: 'https://api.twelvedata.com',
+            }
+        };
         this.charts = {};
         this.sentiment = { HK: 0.60, US: 0.50 };
         this.history = new HistoryManager();
@@ -1930,9 +1943,17 @@ class StockPredictionApp {
                 }
             }
             
+            // Try alternative data sources before falling back to mock data
+            console.warn(`All primary APIs failed for ${symbol}, trying alternative sources`);
+            const alternativeData = await this.tryAlternativeDataSources(symbol);
+            if (alternativeData && alternativeData.closes && alternativeData.closes.length >= 30) {
+                this.showToast('使用替代數據源', 'info', 3000);
+                return alternativeData;
+            }
+            
             // Generate mock data as last resort
-            console.warn(`Generating mock data for ${symbol} - API unavailable`);
-            this.showToast('使用模擬數據 - 後端服務器不可用', 'warning', 5000);
+            console.warn(`Generating mock data for ${symbol} - all APIs unavailable`);
+            this.showToast('使用模擬數據 - 所有數據源不可用', 'warning', 5000);
             return this.generateMockData(symbol);
         } catch (error) {
             console.error('Fallback data generation failed:', error);
@@ -1997,6 +2018,82 @@ class StockPredictionApp {
             '^GSPC': 1000000000, '^DJI': 500000000, '^IXIC': 2000000000
         };
         return baseVolumes[symbol] || 10000000; // Default volume
+    }
+    
+    async tryAlternativeDataSources(symbol) {
+        // Try Alpha Vantage directly (if server has API key)
+        try {
+            console.log('Trying Alpha Vantage as alternative data source...');
+            const alphaData = await this.fetchAlphaVantageDirect(symbol);
+            if (alphaData && alphaData.closes && alphaData.closes.length >= 30) {
+                console.log('Alpha Vantage alternative data source successful');
+                return alphaData;
+            }
+        } catch (error) {
+            console.warn('Alpha Vantage alternative failed:', error.message);
+        }
+        
+        // Try other alternative sources here if needed
+        // (Twelve Data, IEX Cloud, etc.)
+        
+        return null;
+    }
+    
+    async fetchAlphaVantageDirect(symbol) {
+        try {
+            // Use the existing Alpha Vantage proxy endpoint
+            const url = `${this.backendBase}/api/alphavantage?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&outputsize=full`;
+            const response = await this.fetchWithTimeout(url);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data['Error Message'] || data['Information'] || data.error) {
+                throw new Error(data['Error Message'] || data['Information'] || data.error);
+            }
+            
+            const timeSeries = data['Time Series (Daily)'];
+            if (!timeSeries) {
+                throw new Error('No time series data found');
+            }
+            
+            const dates = Object.keys(timeSeries).sort();
+            const closes = dates.map(date => parseFloat(timeSeries[date]['4. close']));
+            const volumes = dates.map(date => parseFloat(timeSeries[date]['5. volume']));
+            const opens = dates.map(date => parseFloat(timeSeries[date]['1. open']));
+            const highs = dates.map(date => parseFloat(timeSeries[date]['2. high']));
+            const lows = dates.map(date => parseFloat(timeSeries[date]['3. low']));
+            
+            // Filter out invalid data
+            const validData = closes.map((close, i) => ({
+                close: isFinite(close) && close > 0 ? close : null,
+                volume: isFinite(volumes[i]) ? volumes[i] : 0,
+                open: isFinite(opens[i]) ? opens[i] : null,
+                high: isFinite(highs[i]) ? highs[i] : null,
+                low: isFinite(lows[i]) ? lows[i] : null,
+                date: dates[i]
+            })).filter(item => item.close !== null);
+            
+            if (validData.length < 30) {
+                throw new Error('Insufficient valid data points');
+            }
+            
+            return {
+                dates: validData.map(item => item.date),
+                closes: validData.map(item => item.close),
+                volumes: validData.map(item => item.volume),
+                opens: validData.map(item => item.open),
+                highs: validData.map(item => item.high),
+                lows: validData.map(item => item.low)
+            };
+            
+        } catch (error) {
+            console.error('Alpha Vantage direct fetch failed:', error);
+            throw error;
+        }
     }
     
     getSymbolBasePrice(symbol) {
