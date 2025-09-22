@@ -21,7 +21,7 @@ class StockPredictionApp {
         // Alpha Vantage proxy base (backend only; no frontend key)
         this.apiUrl = `${this.backendBase}/api/alphavantage`;
         // Force Yahoo-only data path when backend is unreliable
-        this.useYahooOnly = true;
+        this.useYahooOnly = false; // Enable alternative data sources
         
         // Alternative data sources when Yahoo Finance fails
         this.alternativeDataSources = {
@@ -33,6 +33,12 @@ class StockPredictionApp {
             twelveData: {
                 enabled: false, // Can be enabled if API key is available
                 baseUrl: 'https://api.twelvedata.com',
+            },
+            // Free tier: 8 requests/min, 500/day
+            financialModelingPrep: {
+                enabled: true,
+                baseUrl: 'https://financialmodelingprep.com/api/v3',
+                apiKey: 'demo' // Free demo key
             }
         };
         this.charts = {};
@@ -2130,10 +2136,22 @@ class StockPredictionApp {
         } catch (error) {
             console.warn('Alpha Vantage alternative failed:', error.message);
         }
-        
+
+        // Try Financial Modeling Prep (free tier)
+        try {
+            console.log('Trying Financial Modeling Prep as alternative data source...');
+            const fmpData = await this.fetchFinancialModelingPrep(symbol);
+            if (fmpData && fmpData.closes && fmpData.closes.length >= 30) {
+                console.log('Financial Modeling Prep alternative data source successful');
+                return fmpData;
+            }
+        } catch (error) {
+            console.warn('Financial Modeling Prep alternative failed:', error.message);
+        }
+
         // Try other alternative sources here if needed
         // (Twelve Data, IEX Cloud, etc.)
-        
+
         return null;
     }
     
@@ -2190,6 +2208,69 @@ class StockPredictionApp {
             
         } catch (error) {
             console.error('Alpha Vantage direct fetch failed:', error);
+            throw error;
+        }
+    }
+
+    async fetchFinancialModelingPrep(symbol) {
+        try {
+            const fmp = this.alternativeDataSources.financialModelingPrep;
+            if (!fmp.enabled) throw new Error('Financial Modeling Prep disabled');
+
+            // Get historical data (last 6 months)
+            const url = `${fmp.baseUrl}/historical-price-full/${encodeURIComponent(symbol)}?apikey=${fmp.apiKey}`;
+            const response = await this.fetchWithTimeout(url);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (data.Error || data.error) {
+                throw new Error(data.Error || data.error);
+            }
+
+            const historical = data.historical;
+            if (!historical || !Array.isArray(historical) || historical.length < 30) {
+                throw new Error('Insufficient historical data');
+            }
+
+            // Take last 180 days (6 months)
+            const recentData = historical.slice(0, 180).reverse(); // Reverse to get oldest first
+
+            const dates = recentData.map(item => item.date);
+            const closes = recentData.map(item => parseFloat(item.close));
+            const volumes = recentData.map(item => parseInt(item.volume));
+            const opens = recentData.map(item => parseFloat(item.open));
+            const highs = recentData.map(item => parseFloat(item.high));
+            const lows = recentData.map(item => parseFloat(item.low));
+
+            // Filter out invalid data
+            const validData = closes.map((close, i) => ({
+                close: isFinite(close) && close > 0 ? close : null,
+                volume: isFinite(volumes[i]) ? volumes[i] : 0,
+                open: isFinite(opens[i]) ? opens[i] : null,
+                high: isFinite(highs[i]) ? highs[i] : null,
+                low: isFinite(lows[i]) ? lows[i] : null,
+                date: dates[i]
+            })).filter(item => item.close !== null);
+
+            if (validData.length < 30) {
+                throw new Error('Insufficient valid data points');
+            }
+
+            return {
+                dates: validData.map(item => item.date),
+                closes: validData.map(item => item.close),
+                volumes: validData.map(item => item.volume),
+                opens: validData.map(item => item.open),
+                highs: validData.map(item => item.high),
+                lows: validData.map(item => item.low)
+            };
+
+        } catch (error) {
+            console.error('Financial Modeling Prep fetch failed:', error);
             throw error;
         }
     }
