@@ -387,7 +387,8 @@ app.get('/api/market/insights', async (req, res) => {
         const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
         const price = r ? (r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice) : undefined;
         return isFinite(price) ? Number(price) : NaN;
-      } catch {
+      } catch (e) {
+        console.error(`Failed to fetch or parse quote for ${symbol}:`, e);
         return NaN;
       }
     };
@@ -397,10 +398,17 @@ app.get('/api/market/insights', async (req, res) => {
     const quotes = await Promise.all(symbols.map((s) => fetchQuoteYahoo(s)));
     symbols.forEach((sym, idx) => {
       const ch = charts[idx];
-      if (!ch || !ch.ok) return;
+      if (!ch || !ch.ok) {
+        console.error(`Could not fetch chart data for ${sym}. Reason:`, ch.error || 'Unknown error');
+        return;
+      }
       const closes = ch.closes.slice();
       const lp = quotes[idx];
-      if (isFinite(lp) && closes.length) closes[closes.length - 1] = lp;
+      if (isFinite(lp) && closes.length) {
+        closes[closes.length - 1] = lp;
+      } else if (!isFinite(lp)) {
+          console.warn(`Could not fetch real-time quote for ${sym}. Historical data will be used.`);
+      }
       series[sym] = { dates: ch.dates, closes, volumes: ch.volumes };
     });
 

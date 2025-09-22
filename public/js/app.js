@@ -577,7 +577,7 @@ class StockPredictionApp {
                 const fmt = (v) => (isFinite(v) ? `$${v.toFixed(2)}` : '—');
                 return `<tr><td>${sym}</td><td>${mkt}</td><td>${fmt(lv.current)}</td><td>${fmt(lv.buy)}</td><td>${fmt(lv.tp)}</td><td>${fmt(lv.sl)}</td><td>${note || lv.regime}</td></tr>`;
             } catch (e) {
-                return `<tr><td>${sym}</td><td>${mkt}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>${note}</td></tr>`;
+                return `<tr><td>${sym}</td><td>${mkt}</td><td colspan="4" style="text-align: center; font-style: italic; color: #6b7280;">數據不足 (Data unavailable)</td><td>${note || ''}</td></tr>`;
             }
         };
         const volRow = (sym, mkt, dod, wow, highlights = '') => {
@@ -588,7 +588,7 @@ class StockPredictionApp {
                 const fmt = (v) => (isFinite(v) ? `$${v.toFixed(2)}` : '—');
                 return `<tr><td>${sym}</td><td>${mkt}</td><td>${dod}</td><td>${wow}</td><td>${highlights}</td><td>${fmt(lv.current)}</td><td>${fmt(lv.buy)}</td><td>${fmt(lv.tp)}</td><td>${fmt(lv.sl)}</td></tr>`;
             } catch (e) {
-                return `<tr><td>${sym}</td><td>${mkt}</td><td>${dod}</td><td>${wow}</td><td>${highlights}</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
+                return `<tr><td>${sym}</td><td>${mkt}</td><td>${dod}</td><td>${wow}</td><td>${highlights}</td><td colspan="4" style="text-align: center; font-style: italic; color: #6b7280;">數據不足 (Data unavailable)</td></tr>`;
             }
         };
         const aiHeader = aiRecommendedSymbols ? 
