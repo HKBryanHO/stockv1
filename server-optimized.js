@@ -142,17 +142,12 @@ async function evaluateAlerts() {
     active.forEach(a => { if (!bySymbol.has(a.symbol)) bySymbol.set(a.symbol, []); bySymbol.get(a.symbol).push(a); });
     for (const [sym, arr] of bySymbol.entries()) {
       try {
-        const y1 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-        let { status, body } = await tryFetchWithFallback(y1);
-        if (status !== 200 || !body) {
-          const y2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-          const r2 = await tryFetchWithFallback(y2);
-          status = r2.status; body = r2.body;
-        }
+        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(sym)}&apikey=${ALPHA_KEY}`;
+        let { status, body } = await tryFetchWithFallback(url);
         if (status !== 200 || !body) continue;
         const j = JSON.parse(body || '{}');
-        const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
-        const price = r ? (r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice) : null;
+        const r = j && j['Global Quote'];
+        const price = r ? parseFloat(r['05. price']) : null;
         if (!isFinite(price)) continue;
         let changed = false;
         for (const a of list) {
@@ -416,18 +411,14 @@ const WATCHLIST = ['AAPL', 'MSFT', 'TSLA', 'GOOGL', 'AMZN'];
 async function refreshWatchlist() {
   const promises = WATCHLIST.map(async (sym) => {
     try {
-      const u1 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-      let { status, body } = await tryFetchWithFallback(u1);
-      if (status !== 200 || !body) {
-        const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-        const r2 = await tryFetchWithFallback(u2);
-        status = r2.status; body = r2.body;
-      }
+      const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(sym)}&apikey=${ALPHA_KEY}`;
+      let { status, body } = await tryFetchWithFallback(url);
+      if (status !== 200 || !body) return { symbol: sym, ok: false };
       const j = JSON.parse(body || '{}');
-      const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
+      const r = j && j['Global Quote'];
       if (!r) return { symbol: sym, ok: false };
-      const lastClose = Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice);
-      const prevClose = Number(r.regularMarketPreviousClose ?? lastClose);
+      const lastClose = parseFloat(r['05. price']);
+      const prevClose = parseFloat(r['08. previous close']);
       const dailyReturnPct = (isFinite(lastClose) && isFinite(prevClose) && prevClose) ? ((lastClose/prevClose - 1) * 100) : 0;
       return { symbol: sym, ok: true, lastClose, dailyReturnPct, timestamp: new Date().toISOString() };
     } catch (e) {
@@ -1109,32 +1100,28 @@ app.post('/api/grok/screener', async (req, res) => {
     }
 
     async function fetchQuote(sym) {
-      const u1 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+      const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(sym)}&apikey=${ALPHA_KEY}`;
       try {
-        let { status, body } = await tryFetchWithFallback(u1);
-        if (status !== 200 || !body) {
-          const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-          const r2 = await tryFetchWithFallback(u2);
-          status = r2.status; body = r2.body;
-        }
+        let { status, body } = await tryFetchWithFallback(url);
+        if (status !== 200 || !body) return { symbol: sym, ok: false };
         try {
           const j = JSON.parse(body || '{}');
-          const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
+          const r = j && j['Global Quote'];
           if (!r) return { symbol: sym, ok: false };
           return {
             ok: true,
-            symbol: r.symbol,
-            shortName: r.shortName,
-            price: Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice),
-            changePercent: Number(r.regularMarketChangePercent ?? 0),
-            marketCap: Number(r.marketCap ?? 0),
-            trailingPE: Number(r.trailingPE ?? NaN),
-            forwardPE: Number(r.forwardPE ?? NaN),
-            pegRatio: Number(r.pegRatio ?? NaN),
-            beta: Number(r.beta ?? NaN),
-            currency: r.currency || 'USD',
-            sector: r.sector || '',
-            industry: r.industry || ''
+            symbol: r['01. symbol'],
+            shortName: r['01. symbol'], // Alpha Vantage doesn't provide shortName in GLOBAL_QUOTE
+            price: parseFloat(r['05. price']),
+            changePercent: parseFloat(r['10. change percent'].replace('%', '')),
+            marketCap: NaN, // Not in GLOBAL_QUOTE
+            trailingPE: NaN,
+            forwardPE: NaN,
+            pegRatio: NaN,
+            beta: NaN,
+            currency: 'USD', // Assuming USD, not provided
+            sector: '', // Not in GLOBAL_QUOTE
+            industry: '' // Not in GLOBAL_QUOTE
           };
         } catch {
           return { symbol: sym, ok: false };
@@ -1320,32 +1307,28 @@ app.post('/api/grok/peers-compare', async (req, res) => {
     }
 
     async function fetchQuote(sym) {
-      const u1 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+      const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(sym)}&apikey=${ALPHA_KEY}`;
       try {
-        let { status, body } = await tryFetchWithFallback(u1);
-        if (status !== 200 || !body) {
-          const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-          const r2 = await tryFetchWithFallback(u2);
-          status = r2.status; body = r2.body;
-        }
+        let { status, body } = await tryFetchWithFallback(url);
+        if (status !== 200 || !body) return { symbol: sym, ok: false };
         try {
           const j = JSON.parse(body || '{}');
-          const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
+          const r = j && j['Global Quote'];
           if (!r) return { symbol: sym, ok: false };
           return {
             ok: true,
-            symbol: r.symbol,
-            shortName: r.shortName,
-            sector: r.sector || '',
-            industry: r.industry || '',
-            price: Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice),
-            changePercent: Number(r.regularMarketChangePercent ?? 0),
-            marketCap: Number(r.marketCap ?? 0),
-            trailingPE: Number(r.trailingPE ?? NaN),
-            forwardPE: Number(r.forwardPE ?? NaN),
-            pegRatio: Number(r.pegRatio ?? NaN),
-            beta: Number(r.beta ?? NaN),
-            dividendYield: Number(r.trailingAnnualDividendYield ?? NaN)
+            symbol: r['01. symbol'],
+            shortName: r['01. symbol'],
+            sector: '',
+            industry: '',
+            price: parseFloat(r['05. price']),
+            changePercent: parseFloat(r['10. change percent'].replace('%', '')),
+            marketCap: NaN,
+            trailingPE: NaN,
+            forwardPE: NaN,
+            pegRatio: NaN,
+            beta: NaN,
+            dividendYield: NaN
           };
         } catch {
           return { symbol: sym, ok: false };
@@ -1430,25 +1413,21 @@ app.post('/api/grok/portfolio-doctor', async (req, res) => {
     }
 
     async function fetchQuote(sym) {
-      const u1 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+      const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(sym)}&apikey=${ALPHA_KEY}`;
       try {
-        let { status, body } = await tryFetchWithFallback(u1);
-        if (status !== 200 || !body) {
-          const u2 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-          const r2 = await tryFetchWithFallback(u2);
-          status = r2.status; body = r2.body;
-        }
+        let { status, body } = await tryFetchWithFallback(url);
+        if (status !== 200 || !body) return { symbol: sym, ok: false };
         try {
           const j = JSON.parse(body || '{}');
-          const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
+          const r = j && j['Global Quote'];
           if (!r) return { symbol: sym, ok: false };
           return {
             ok: true,
-            symbol: r.symbol,
-            price: Number(r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice),
-            beta: Number(r.beta ?? NaN),
-            sector: r.sector || '',
-            industry: r.industry || ''
+            symbol: r['01. symbol'],
+            price: parseFloat(r['05. price']),
+            beta: NaN, // Not in GLOBAL_QUOTE
+            sector: '', // Not in GLOBAL_QUOTE
+            industry: '' // Not in GLOBAL_QUOTE
           };
         } catch {
           return { symbol: sym, ok: false };

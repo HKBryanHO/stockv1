@@ -353,24 +353,19 @@ app.get('/api/market/insights', async (req, res) => {
 
     const fetchChartYahoo = async (symbolRaw) => {
       const symbol = normalizeSymbol(symbolRaw);
-      const u1 = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=6mo&interval=1d&events=history&includeAdjustedClose=true`;
+      const u1 = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&apikey=${ALPHA_KEY}&outputsize=compact`;
       try {
         let { status, body } = await tryFetchWithFallback(u1);
         if (status !== 200 || !body) {
-          const u2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=6mo&interval=1d&events=history&includeAdjustedClose=true`;
-          const r2 = await tryFetchWithFallback(u2);
-          status = r2.status; body = r2.body;
+          return { ok: false, error: `Failed to fetch chart data for ${symbol}` };
         }
-        if (status !== 200 || !body) return { ok: false, error: `Failed to fetch chart data for ${symbol}` };
         let j;
         try { j = JSON.parse(body); } catch { return { ok: false, error: 'Invalid JSON in chart response' }; }
-        const r = j && j.chart && j.chart.result && j.chart.result[0];
+        const r = j && j['Time Series (Daily)'];
         if (!r) return { ok: false, error: 'Unexpected chart data structure' };
-        const timestamps = r.timestamp || [];
-        const quote = r.indicators && r.indicators.quote && r.indicators.quote[0] || {};
-        const closes = (quote.close || []).map((v) => Number(v));
-        const volumes = (quote.volume || []).map((v) => Number(v || 0));
-        const dates = timestamps.map((t) => new Date(t * 1000).toISOString().slice(0,10));
+        const dates = Object.keys(r).sort();
+        const closes = dates.map(d => parseFloat(r[d]['4. close']));
+        const volumes = dates.map(d => parseFloat(r[d]['5. volume']));
         return { ok: true, dates, closes, volumes };
       } catch (e) {
         console.error(`Exception in fetchChartYahoo for ${symbol}:`, e);
@@ -380,12 +375,12 @@ app.get('/api/market/insights', async (req, res) => {
 
     const fetchQuoteYahoo = async (symbolRaw) => {
       const symbol = normalizeSymbol(symbolRaw);
-      const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`;
+      const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${ALPHA_KEY}`;
       try {
         const { body } = await fetchJson(url);
         const j = JSON.parse(body);
-        const r = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
-        const price = r ? (r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice) : undefined;
+        const r = j && j['Global Quote'];
+        const price = r ? parseFloat(r['05. price']) : undefined;
         return isFinite(price) ? Number(price) : NaN;
       } catch (e) {
         console.error(`Failed to fetch or parse quote for ${symbol}:`, e);
