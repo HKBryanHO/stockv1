@@ -677,7 +677,12 @@ app.get('/api/yahoo/chart', async (req, res) => {
 
 // Simple health endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    time: new Date().toISOString(),
+    version: '2.0.0',
+    apis: ['finnhub', 'fmp', 'polygon', 'enhanced']
+  });
 });
 
 // New API endpoints for enhanced data sources
