@@ -1785,32 +1785,44 @@ class StockPredictionApp {
 
     async fetchYahooQuote(symbol) {
         const fetchOnce = async () => {
-            const url = `${this.backendBase}/api/yahoo/quote?symbol=${encodeURIComponent(symbol)}`;
-            console.log(`Fetching Yahoo quote from: ${url}`);
-            
-            const resp = await fetch(url).catch((e)=>{ 
-                console.error('Quote fetch error:', e); 
-                throw new Error(`Network error: ${e.message}`);
-            });
-            
-            if (!resp.ok) {
-                console.error(`HTTP error: ${resp.status} ${resp.statusText}`);
-                throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+            // 1) Try backend proxy first
+            try {
+                const url = `${this.backendBase}/api/yahoo/quote?symbol=${encodeURIComponent(symbol)}`;
+                console.log(`Fetching Yahoo quote from: ${url}`);
+                const resp = await fetch(url);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    console.log('Yahoo quote response:', data);
+                    const r = data?.quoteResponse?.result?.[0] || data?.quoteResponse?.result?.[0];
+                    if (!r) throw new Error('No quote');
+                    const price = r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice;
+                    return { price: Number(price), currency: r.currency };
+                }
+                console.warn(`Backend quote HTTP ${resp.status}`);
+            } catch (e) {
+                console.warn('Backend quote fetch failed, will try direct proxy:', e?.message || e);
             }
-            
-            const data = await resp.json().catch((e) => {
-                console.error('JSON parse error:', e);
-                throw new Error('Invalid JSON response');
-            });
-            
-            console.log('Yahoo quote response:', data);
-            const r = data?.quoteResponse?.result?.[0] || data?.quoteResponse?.result?.[0];
-            if (!r) {
-                console.error('No quote result found in response:', data);
-                throw new Error('No quote');
+
+            // 2) Direct Yahoo via CORS-friendly proxy (no compression issues)
+            const directUrls = [
+                `https://r.jina.ai/http://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`,
+                `https://r.jina.ai/http://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`
+            ];
+            let lastErr;
+            for (const u of directUrls) {
+                try {
+                    console.log('Trying direct Yahoo quote:', u);
+                    const resp = await fetch(u, { headers: { 'Accept': 'application/json' } });
+                    if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); continue; }
+                    const text = await resp.text();
+                    const data = JSON.parse(text);
+                    const r = data?.quoteResponse?.result?.[0];
+                    if (!r) { lastErr = new Error('No quote'); continue; }
+                    const price = r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice;
+                    return { price: Number(price), currency: r.currency };
+                } catch (e) { lastErr = e; }
             }
-            const price = r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice;
-            return { price: Number(price), currency: r.currency };
+            throw lastErr || new Error('quote_fetch_failed');
         };
         return await this.withBackoff(fetchOnce, 3).catch((error) => { 
             console.error('Yahoo quote fetch failed after retries:', error);
@@ -1821,17 +1833,46 @@ class StockPredictionApp {
     async fetchYahooQuotesBatch(symbols) {
         const fetchOnce = async () => {
             const list = symbols.join(',');
-            const url = `${this.backendBase}/api/yahoo/quote?symbol=${encodeURIComponent(list)}`;
-            const resp = await fetch(url).catch((e)=>{ console.log('batch quote fetch error', e); throw e; });
-            const data = await resp.json();
-            const results = data?.quoteResponse?.result || [];
-            const map = {};
-            results.forEach(r => {
-                const sym = r.symbol;
-                const p = r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice;
-                if (sym && isFinite(p)) map[sym] = Number(p);
-            });
-        return map;
+            // 1) Backend
+            try {
+                const url = `${this.backendBase}/api/yahoo/quote?symbol=${encodeURIComponent(list)}`;
+                const resp = await fetch(url);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const results = data?.quoteResponse?.result || [];
+                    const map = {};
+                    results.forEach(r => {
+                        const sym = r.symbol;
+                        const p = r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice;
+                        if (sym && isFinite(p)) map[sym] = Number(p);
+                    });
+                    return map;
+                }
+            } catch (_) {}
+
+            // 2) Direct via CORS proxy
+            const urls = [
+                `https://r.jina.ai/http://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(list)}`,
+                `https://r.jina.ai/http://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(list)}`
+            ];
+            let lastErr;
+            for (const u of urls) {
+                try {
+                    const resp = await fetch(u, { headers: { 'Accept': 'application/json' } });
+                    if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); continue; }
+                    const text = await resp.text();
+                    const data = JSON.parse(text);
+                    const results = data?.quoteResponse?.result || [];
+                    const map = {};
+                    results.forEach(r => {
+                        const sym = r.symbol;
+                        const p = r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice;
+                        if (sym && isFinite(p)) map[sym] = Number(p);
+                    });
+                    return map;
+                } catch (e) { lastErr = e; }
+            }
+            throw lastErr || new Error('batch_quote_failed');
         };
         return await this.withBackoff(fetchOnce, 3).catch(() => ({}));
     }
@@ -1842,54 +1883,84 @@ class StockPredictionApp {
         // Cache hit
         try { const db = await this.dbPromise; if (db) { const c = await db.get('historical', key); if (c && (now - (c.ts||0) < 3600*1000)) return c.data; } } catch (_) {}
         const fetchOnce = async () => {
-            const url = `${this.backendBase}/api/yahoo/chart?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}&interval=1d`;
-            console.log(`Fetching Yahoo chart data from: ${url}`);
-            
-            const resp = await fetch(url).catch((e)=>{ 
-                console.error('Chart fetch error:', e); 
-                throw new Error(`Network error: ${e.message}`);
-            });
-            
-            if (!resp.ok) {
-                console.error(`HTTP error: ${resp.status} ${resp.statusText}`);
-                throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-            }
-            
-            const data = await resp.json().catch((e) => {
-                console.error('JSON parse error:', e);
-                throw new Error('Invalid JSON response');
-            });
-            
-            console.log('Yahoo chart response:', data);
-            const r = data?.chart?.result?.[0];
-            if (!r) {
-                console.error('No chart result found in response:', data);
-                throw new Error('no_result');
-            }
-            const ts = r.timestamp || [];
-            const q = r.indicators?.quote?.[0] || {};
-            let closes = (r.indicators?.adjclose?.[0]?.adjclose || q.close || []).map(v => Number(v));
-            const volumes = (q.volume || []).map(v => Number(v));
-            const opens = (q.open || []).map(v => Number(v));
-            const highs = (q.high || []).map(v => Number(v));
-            const lows = (q.low || []).map(v => Number(v));
-            const dates = ts.map(t => new Date(t * 1000).toISOString().slice(0, 10));
-            // Clean NaN and 3-sigma outliers
-            closes = closes.map(v => (isFinite(v) && v > 0) ? v : NaN).filter(v => isFinite(v));
-            const mean = closes.reduce((a,b)=>a+b,0)/Math.max(1,closes.length);
-            const std = Math.sqrt(closes.reduce((s,v)=>s+Math.pow(v-mean,2),0)/Math.max(1,closes.length));
-            closes = closes.filter(v => Math.abs(v-mean) <= 3*(std||1));
-            let out = { dates, closes, volumes, opens, highs, lows };
-            // Resilience: if too few points after cleaning, rebuild using raw quote.close without outlier filter
-            if (!out.closes || out.closes.length < 30) {
-                try {
-                    const rawCloses = (q.close || []).map(v => Number(v)).filter(v => isFinite(v) && v > 0);
-                    if (rawCloses.length >= 10) {
-                        out = { dates, closes: rawCloses, volumes, opens, highs, lows };
+            // 1) Backend proxy
+            try {
+                const url = `${this.backendBase}/api/yahoo/chart?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}&interval=1d`;
+                console.log(`Fetching Yahoo chart data from: ${url}`);
+                const resp = await fetch(url);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const r = data?.chart?.result?.[0];
+                    if (!r) throw new Error('no_result');
+                    const ts = r.timestamp || [];
+                    const q = r.indicators?.quote?.[0] || {};
+                    let closes = (r.indicators?.adjclose?.[0]?.adjclose || q.close || []).map(v => Number(v));
+                    const volumes = (q.volume || []).map(v => Number(v));
+                    const opens = (q.open || []).map(v => Number(v));
+                    const highs = (q.high || []).map(v => Number(v));
+                    const lows = (q.low || []).map(v => Number(v));
+                    const dates = ts.map(t => new Date(t * 1000).toISOString().slice(0, 10));
+                    // Clean NaN and 3-sigma outliers
+                    closes = closes.map(v => (isFinite(v) && v > 0) ? v : NaN).filter(v => isFinite(v));
+                    const mean = closes.reduce((a,b)=>a+b,0)/Math.max(1,closes.length);
+                    const std = Math.sqrt(closes.reduce((s,v)=>s+Math.pow(v-mean,2),0)/Math.max(1,closes.length));
+                    closes = closes.filter(v => Math.abs(v-mean) <= 3*(std||1));
+                    let out = { dates, closes, volumes, opens, highs, lows };
+                    if (!out.closes || out.closes.length < 30) {
+                        try {
+                            const rawCloses = (q.close || []).map(v => Number(v)).filter(v => isFinite(v) && v > 0);
+                            if (rawCloses.length >= 10) {
+                                out = { dates, closes: rawCloses, volumes, opens, highs, lows };
+                            }
+                        } catch (_) {}
                     }
-                } catch (_) {}
+                    return out;
+                }
+                console.warn(`Backend chart HTTP ${resp.status}`);
+            } catch (e) {
+                console.warn('Backend chart fetch failed, will try direct proxy:', e?.message || e);
             }
-            return out;
+
+            // 2) Direct Yahoo via CORS proxy
+            const urls = [
+                `https://r.jina.ai/http://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${encodeURIComponent(range)}&interval=1d&events=history&includeAdjustedClose=true`,
+                `https://r.jina.ai/http://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${encodeURIComponent(range)}&interval=1d&events=history&includeAdjustedClose=true`
+            ];
+            let lastErr;
+            for (const u of urls) {
+                try {
+                    console.log('Trying direct Yahoo chart:', u);
+                    const resp = await fetch(u, { headers: { 'Accept': 'application/json' } });
+                    if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); continue; }
+                    const text = await resp.text();
+                    const data = JSON.parse(text);
+                    const r = data?.chart?.result?.[0];
+                    if (!r) { lastErr = new Error('no_result'); continue; }
+                    const ts = r.timestamp || [];
+                    const q = r.indicators?.quote?.[0] || {};
+                    let closes = (r.indicators?.adjclose?.[0]?.adjclose || q.close || []).map(v => Number(v));
+                    const volumes = (q.volume || []).map(v => Number(v));
+                    const opens = (q.open || []).map(v => Number(v));
+                    const highs = (q.high || []).map(v => Number(v));
+                    const lows = (q.low || []).map(v => Number(v));
+                    const dates = ts.map(t => new Date(t * 1000).toISOString().slice(0, 10));
+                    closes = closes.map(v => (isFinite(v) && v > 0) ? v : NaN).filter(v => isFinite(v));
+                    const mean = closes.reduce((a,b)=>a+b,0)/Math.max(1,closes.length);
+                    const std = Math.sqrt(closes.reduce((s,v)=>s+Math.pow(v-mean,2),0)/Math.max(1,closes.length));
+                    closes = closes.filter(v => Math.abs(v-mean) <= 3*(std||1));
+                    let out = { dates, closes, volumes, opens, highs, lows };
+                    if (!out.closes || out.closes.length < 30) {
+                        try {
+                            const rawCloses = (q.close || []).map(v => Number(v)).filter(v => isFinite(v) && v > 0);
+                            if (rawCloses.length >= 10) {
+                                out = { dates, closes: rawCloses, volumes, opens, highs, lows };
+                            }
+                        } catch (_) {}
+                    }
+                    return out;
+                } catch (e) { lastErr = e; }
+            }
+            throw lastErr || new Error('chart_fetch_failed');
         };
         let out;
         try { out = await this.withBackoff(fetchOnce, 3); }
