@@ -243,34 +243,38 @@ function fetchJson(url, extraHeaders = {}) {
   });
 }
 
+const CORS_PROXIES = [
+  'https://cors.isomorphic-git.org/',
+  'https://r.jina.ai/'
+];
+
 async function tryFetchWithFallback(url) {
-  // Attach browser-like headers and retry on 429/503
-  const attempt = async () => {
-    const res = await fetchJson(url);
-    if (res.status === 429 || res.status === 503) {
-      await new Promise((r) => setTimeout(r, 1500));
-      return fetchJson(url);
-    }
-    return res;
-  };
-  try {
-    const first = await attempt();
-    if (first.status === 429 || first.status === 403) {
-      // fall back to CORS mirror
-      const wrapped = `https://cors.isomorphic-git.org/${url}`;
-      const mirrored = await fetchJson(wrapped);
-      return mirrored;
-    }
-    return first;
-  } catch (e) {
+  const urlsToTry = [
+    url, // Direct first
+    ...CORS_PROXIES.map(proxy => `${proxy}${url}`)
+  ];
+
+  let lastError = null;
+
+  for (const attemptUrl of urlsToTry) {
     try {
-      const wrapped = `https://cors.isomorphic-git.org/${url}`;
-      const r2 = await fetchJson(wrapped);
-      return r2;
-    } catch (e2) {
-      return { status: 599, body: JSON.stringify({ error: 'network_error', detail: e2 && e2.message }) };
+      // Add retry for specific statuses
+      const res = await fetchJson(attemptUrl);
+      if (res.status === 429 || res.status === 503) {
+        await new Promise(r => setTimeout(r, 1500));
+        const retryRes = await fetchJson(attemptUrl);
+        if (retryRes.status === 200) return retryRes;
+      }
+      if (res.status === 200) {
+        return res;
+      }
+      lastError = new Error(`Status ${res.status} from ${attemptUrl}`);
+    } catch (e) {
+      lastError = e;
     }
   }
+
+  return { status: 599, body: JSON.stringify({ error: 'network_error_all_proxies', detail: lastError ? lastError.message : 'Unknown error' }) };
 }
 
 // Alpha Vantage proxy (TIME_SERIES_* and others) with caching and rate-limit handling

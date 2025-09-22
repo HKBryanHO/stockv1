@@ -24,29 +24,29 @@ class StockPredictionApp {
         this.useYahooOnly = false; // Enable alternative data sources
         
         // Alternative data sources when Yahoo Finance fails
-        this.alternativeDataSources = {
-            alphaVantage: {
-                enabled: true,
-                baseUrl: 'https://www.alphavantage.co/query',
-                // Note: API key should be set on the server side
-            },
-            twelveData: {
-                enabled: false, // Can be enabled if API key is available
-                baseUrl: 'https://api.twelvedata.com',
-            },
-            // Free tier: 8 requests/min, 500/day (requires registration)
-            financialModelingPrep: {
-                enabled: false, // Disabled - requires API key registration
-                baseUrl: 'https://financialmodelingprep.com/api/v3',
-                apiKey: 'demo'
-            },
-            // Free stock API - no registration required
-            yahooFinanceWebScrape: {
-                enabled: true,
-                baseUrl: 'https://finance.yahoo.com/quote',
-                // Scrape data from Yahoo Finance web pages as last resort
-            }
-        };
+        // this.alternativeDataSources = {
+        //     alphaVantage: {
+        //         enabled: true,
+        //         baseUrl: 'https://www.alphavantage.co/query',
+        //         // Note: API key should be set on the server side
+        //     },
+        //     twelveData: {
+        //         enabled: false, // Can be enabled if API key is available
+        //         baseUrl: 'https://api.twelvedata.com',
+        //     },
+        //     // Free tier: 8 requests/min, 500/day (requires registration)
+        //     financialModelingPrep: {
+        //         enabled: false, // Disabled - requires API key registration
+        //         baseUrl: 'https://financialmodelingprep.com/api/v3',
+        //         apiKey: 'demo'
+        //     },
+        //     // Free stock API - no registration required
+        //     yahooFinanceWebScrape: {
+        //         enabled: true,
+        //         baseUrl: 'https://finance.yahoo.com/quote',
+        //         // Scrape data from Yahoo Finance web pages as last resort
+        //     }
+        // };
         this.charts = {};
         this.sentiment = { HK: 0.60, US: 0.50 };
         this.history = new HistoryManager();
@@ -562,7 +562,6 @@ class StockPredictionApp {
             </div>
         `;
     }
-
     buildMarketDashboardTemplate(liveSeries, aiRecommendedSymbols = null) {
         const d = new Date().toLocaleDateString();
         const planner = new TradePlanner();
@@ -878,7 +877,6 @@ class StockPredictionApp {
         if (typeof this.testBackendConnectivity === 'function') {
             try { await this.testBackendConnectivity(); } catch (_) {}
         }
-
         try {
             // Fetch Yahoo historical closes first
             let fetchReason = '';
@@ -1520,7 +1518,6 @@ class StockPredictionApp {
             parent.classList.remove('animate-pulse');
         }, 1000);
     }
-
     animateCounter(element, targetValue, duration) {
         const startValue = parseFloat(element.textContent.replace(/[$,%]/g, '')) || 0;
         const target = parseFloat(targetValue.replace(/[$,%]/g, '')) || 0;
@@ -2002,20 +1999,7 @@ class StockPredictionApp {
         let out;
         try { out = await this.withBackoff(fetchOnce, 3); }
         catch (e) {
-            // Alpha fallback
-            try {
-                const df = new DataFetcher(this.apiUrl);
-                const av = await df.fetchStockData(symbol);
-                let closes = (av?.closes||[]).filter(v=>isFinite(v)&&v>0);
-                const mean = closes.reduce((a,b)=>a+b,0)/Math.max(1,closes.length);
-                const std = Math.sqrt(closes.reduce((s,v)=>s+Math.pow(v-mean,2),0)/Math.max(1,closes.length));
-                closes = closes.filter(v => Math.abs(v-mean) <= 3*(std||1));
-                out = { dates: av.dates||[], closes, volumes: av.volumes||[] };
-            } catch (avError) { 
-                console.warn('Alpha Vantage fallback failed:', avError.message);
-                // Try to use cached data or generate mock data as last resort
-                out = await this.getFallbackData(symbol);
-            }
+            throw new Error('Unable to fetch data from Yahoo Finance');
         }
         try { const db = await this.dbPromise; if (db) await db.put('historical', { ts: now, data: out }, key); } catch (_) {}
         return out;
@@ -2038,98 +2022,6 @@ class StockPredictionApp {
         this._proxyPreference = 'direct';
         return false;
     }
-    
-    async getFallbackData(symbol) {
-        try {
-            // Try to get cached data first
-            const db = await this.dbPromise;
-            if (db) {
-                const cached = await db.get('historical', `${symbol}:6mo`);
-                if (cached && cached.data && cached.data.closes && cached.data.closes.length >= 30) {
-                    console.log(`Using cached data for ${symbol}`);
-                    return cached.data;
-                }
-            }
-            
-            // Optionally try alternative data sources (disabled in Yahoo-only mode)
-            if (!this.useYahooOnly) {
-                console.warn(`All primary APIs failed for ${symbol}, trying alternative sources`);
-                const alternativeData = await this.tryAlternativeDataSources(symbol);
-                if (alternativeData && alternativeData.closes && alternativeData.closes.length >= 30) {
-                    this.showToast('使用替代數據源', 'info', 3000);
-                    return alternativeData;
-                }
-            }
-            
-            // Generate mock data as last resort
-            console.warn(`Generating mock data for ${symbol} - all APIs unavailable`);
-            this.showToast('使用模擬數據 - 所有數據源不可用', 'warning', 5000);
-            return this.generateMockData(symbol);
-        } catch (error) {
-            console.error('Fallback data generation failed:', error);
-            return { dates: [], closes: [], volumes: [] };
-        }
-    }
-    
-    generateMockData(symbol) {
-        // Generate 6 months of mock data
-        const days = 180;
-        const dates = [];
-        const closes = [];
-        const volumes = [];
-        const opens = [];
-        const highs = [];
-        const lows = [];
-        
-        const basePrice = this.getSymbolBasePrice(symbol);
-        let currentPrice = basePrice;
-        
-        // Use symbol as seed for consistent mock data
-        const seed = symbol.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-        let random = seed;
-        
-        for (let i = days - 1; i >= 0; i--) {
-            const date = new Date();
-            date.setDate(date.getDate() - i);
-            dates.push(date.toISOString().slice(0, 10));
-            
-            // Generate realistic price movement with trend
-            random = (random * 9301 + 49297) % 233280; // Simple PRNG
-            const trend = Math.sin(i / 30) * 0.02; // Long-term trend
-            const volatility = (random / 233280 - 0.5) * 0.04; // ±2% daily volatility
-            const change = trend + volatility;
-            
-            currentPrice *= (1 + change);
-            const open = currentPrice * (1 + (random / 233280 - 0.5) * 0.01);
-            const high = Math.max(open, currentPrice) * (1 + Math.abs(random / 233280 - 0.5) * 0.02);
-            const low = Math.min(open, currentPrice) * (1 - Math.abs(random / 233280 - 0.5) * 0.02);
-            
-            closes.push(Number(currentPrice.toFixed(2)));
-            opens.push(Number(open.toFixed(2)));
-            highs.push(Number(high.toFixed(2)));
-            lows.push(Number(low.toFixed(2)));
-            
-            // Generate volume with some correlation to price movement
-            const baseVolume = this.getSymbolBaseVolume(symbol);
-            const volumeMultiplier = 1 + Math.abs(change) * 2; // Higher volume on big moves
-            const volume = Math.floor(baseVolume * volumeMultiplier * (0.5 + random / 233280));
-            volumes.push(volume);
-        }
-        
-        return { dates, closes, volumes, opens, highs, lows };
-    }
-    
-    getSymbolBaseVolume(symbol) {
-        // Base volumes for different symbols
-        const baseVolumes = {
-            'AAPL': 50000000, 'MSFT': 30000000, 'GOOGL': 20000000, 'AMZN': 30000000, 'TSLA': 80000000,
-            'META': 20000000, 'NVDA': 40000000, 'NFLX': 3000000, 'AMD': 50000000, 'INTC': 25000000,
-            '0700.HK': 20000000, '0941.HK': 15000000, '1299.HK': 10000000, '0388.HK': 8000000,
-            '^GSPC': 1000000000, '^DJI': 500000000, '^IXIC': 2000000000
-        };
-        return baseVolumes[symbol] || 10000000; // Default volume
-    }
-    
     async tryAlternativeDataSources(symbol) {
         // Try Alpha Vantage directly (if server has API key)
         try {
@@ -2596,7 +2488,6 @@ class StockPredictionApp {
         }
     }
 }
-
 // Data Fetcher Class
 class DataFetcher {
     constructor(apiUrl) {
@@ -3236,7 +3127,6 @@ class QuantitativeCalculator {
         const lastPrice = closes[closes.length - 1];
         return lastPrice * Math.exp(meanReturn * days);
     }
-
     async predictProphet(closes, days) {
         try {
             const P = window.Prophet;
@@ -3810,7 +3700,6 @@ class ChartRenderer {
         };
     }
 }
-
 // Result Renderer
 class ResultRenderer {
     generateHTML(result) {
@@ -4147,7 +4036,6 @@ class SettingsManager {
         }
     }
 }
-
 // Initialize the application
 let app;
 document.addEventListener('DOMContentLoaded', () => {
