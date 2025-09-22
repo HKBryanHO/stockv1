@@ -1798,7 +1798,24 @@ class StockPredictionApp {
 
     async fetchYahooQuote(symbol) {
         const fetchOnce = async () => {
-            // 1) Try backend proxy first
+            // 1) Try new enhanced quote endpoint first
+            try {
+                const url = `${this.backendBase}/api/quote/enhanced?symbol=${encodeURIComponent(symbol)}`;
+                console.log(`Fetching enhanced quote from: ${url}`);
+                const resp = await fetch(url);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    console.log('Enhanced quote response:', data);
+                    if (data.price && isFinite(data.price)) {
+                        return { price: Number(data.price), currency: 'USD', source: data.source };
+                    }
+                }
+                console.warn(`Enhanced quote HTTP ${resp.status}`);
+            } catch (e) {
+                console.warn('Enhanced quote fetch failed, will try backend proxy:', e?.message || e);
+            }
+
+            // 2) Try backend proxy as fallback
             try {
                 const url = `${this.backendBase}/api/yahoo/quote?symbol=${encodeURIComponent(symbol)}`;
                 console.log(`Fetching Yahoo quote from: ${url}`);
