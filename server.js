@@ -14,6 +14,9 @@ app.use(express.json({ limit: '1mb' }));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 const ALPHA_KEY = process.env.ALPHA_VANTAGE_KEY || '';
+const FINNHUB_KEY = process.env.FINNHUB_API_KEY || '';
+const FMP_KEY = process.env.FMP_API_KEY || '';
+const POLYGON_KEY = process.env.POLYGON_API_KEY || '';
 // Deprecated xAI config removed in favor of OpenRouter-only
 const XAI_API_KEY = '';
 const XAI_API_BASE = '';
@@ -351,6 +354,94 @@ app.get('/api/market/insights', async (req, res) => {
       return s;
     };
 
+    // New API integration functions
+    const fetchQuoteFinnhub = async (symbolRaw) => {
+      const symbol = normalizeSymbol(symbolRaw);
+      if (!FINNHUB_KEY) return NaN;
+      const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_KEY}`;
+      try {
+        const { body } = await fetchJson(url);
+        const j = JSON.parse(body);
+        const price = j && j.c ? parseFloat(j.c) : undefined;
+        return isFinite(price) ? Number(price) : NaN;
+      } catch (e) {
+        console.error(`Failed to fetch Finnhub quote for ${symbol}:`, e);
+        return NaN;
+      }
+    };
+
+    const fetchQuoteFMP = async (symbolRaw) => {
+      const symbol = normalizeSymbol(symbolRaw);
+      if (!FMP_KEY) return NaN;
+      const url = `https://financialmodelingprep.com/api/v3/quote/${encodeURIComponent(symbol)}?apikey=${FMP_KEY}`;
+      try {
+        const { body } = await fetchJson(url);
+        const j = JSON.parse(body);
+        const price = j && j[0] && j[0].price ? parseFloat(j[0].price) : undefined;
+        return isFinite(price) ? Number(price) : NaN;
+      } catch (e) {
+        console.error(`Failed to fetch FMP quote for ${symbol}:`, e);
+        return NaN;
+      }
+    };
+
+    const fetchQuotePolygon = async (symbolRaw) => {
+      const symbol = normalizeSymbol(symbolRaw);
+      if (!POLYGON_KEY) return NaN;
+      const url = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(symbol)}/prev?adjusted=true&apikey=${POLYGON_KEY}`;
+      try {
+        const { body } = await fetchJson(url);
+        const j = JSON.parse(body);
+        const price = j && j.results && j.results[0] && j.results[0].c ? parseFloat(j.results[0].c) : undefined;
+        return isFinite(price) ? Number(price) : NaN;
+      } catch (e) {
+        console.error(`Failed to fetch Polygon quote for ${symbol}:`, e);
+        return NaN;
+      }
+    };
+
+    // Enhanced quote fetching with fallback chain
+    const fetchQuoteWithFallback = async (symbolRaw) => {
+      const symbol = normalizeSymbol(symbolRaw);
+      
+      // Try Finnhub first (most reliable for real-time)
+      if (FINNHUB_KEY) {
+        const finnhubPrice = await fetchQuoteFinnhub(symbol);
+        if (isFinite(finnhubPrice)) {
+          console.log(`✓ Finnhub quote for ${symbol}: $${finnhubPrice}`);
+          return finnhubPrice;
+        }
+      }
+      
+      // Try FMP as second option
+      if (FMP_KEY) {
+        const fmpPrice = await fetchQuoteFMP(symbol);
+        if (isFinite(fmpPrice)) {
+          console.log(`✓ FMP quote for ${symbol}: $${fmpPrice}`);
+          return fmpPrice;
+        }
+      }
+      
+      // Try Polygon as third option
+      if (POLYGON_KEY) {
+        const polygonPrice = await fetchQuotePolygon(symbol);
+        if (isFinite(polygonPrice)) {
+          console.log(`✓ Polygon quote for ${symbol}: $${polygonPrice}`);
+          return polygonPrice;
+        }
+      }
+      
+      // Fallback to Alpha Vantage
+      const alphaPrice = await fetchQuoteYahoo(symbol);
+      if (isFinite(alphaPrice)) {
+        console.log(`✓ Alpha Vantage quote for ${symbol}: $${alphaPrice}`);
+        return alphaPrice;
+      }
+      
+      console.error(`✗ All quote sources failed for ${symbol}`);
+      return NaN;
+    };
+
     const fetchChartYahoo = async (symbolRaw) => {
       const symbol = normalizeSymbol(symbolRaw);
       const u1 = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&apikey=${ALPHA_KEY}&outputsize=compact`;
@@ -390,7 +481,7 @@ app.get('/api/market/insights', async (req, res) => {
 
     const series = {};
     const charts = await Promise.all(symbols.map((s) => fetchChartYahoo(s)));
-    const quotes = await Promise.all(symbols.map((s) => fetchQuoteYahoo(s)));
+    const quotes = await Promise.all(symbols.map((s) => fetchQuoteWithFallback(s)));
     symbols.forEach((sym, idx) => {
       const ch = charts[idx];
       if (!ch || !ch.ok) {
@@ -587,6 +678,92 @@ app.get('/api/yahoo/chart', async (req, res) => {
 // Simple health endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
+// New API endpoints for enhanced data sources
+app.get('/api/finnhub/quote', async (req, res) => {
+  try {
+    const symbol = (req.query.symbol || '').toString();
+    if (!symbol) {
+      return res.status(400).json({ error: 'Symbol parameter required' });
+    }
+    if (!FINNHUB_KEY) {
+      return res.status(503).json({ error: 'Finnhub API key not configured' });
+    }
+    
+    const price = await fetchQuoteFinnhub(symbol);
+    if (isFinite(price)) {
+      res.json({ symbol, price, source: 'finnhub' });
+    } else {
+      res.status(404).json({ error: 'Quote not found' });
+    }
+  } catch (e) {
+    console.error('Error in /api/finnhub/quote:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/fmp/quote', async (req, res) => {
+  try {
+    const symbol = (req.query.symbol || '').toString();
+    if (!symbol) {
+      return res.status(400).json({ error: 'Symbol parameter required' });
+    }
+    if (!FMP_KEY) {
+      return res.status(503).json({ error: 'FMP API key not configured' });
+    }
+    
+    const price = await fetchQuoteFMP(symbol);
+    if (isFinite(price)) {
+      res.json({ symbol, price, source: 'fmp' });
+    } else {
+      res.status(404).json({ error: 'Quote not found' });
+    }
+  } catch (e) {
+    console.error('Error in /api/fmp/quote:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/polygon/quote', async (req, res) => {
+  try {
+    const symbol = (req.query.symbol || '').toString();
+    if (!symbol) {
+      return res.status(400).json({ error: 'Symbol parameter required' });
+    }
+    if (!POLYGON_KEY) {
+      return res.status(503).json({ error: 'Polygon API key not configured' });
+    }
+    
+    const price = await fetchQuotePolygon(symbol);
+    if (isFinite(price)) {
+      res.json({ symbol, price, source: 'polygon' });
+    } else {
+      res.status(404).json({ error: 'Quote not found' });
+    }
+  } catch (e) {
+    console.error('Error in /api/polygon/quote:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/quote/enhanced', async (req, res) => {
+  try {
+    const symbol = (req.query.symbol || '').toString();
+    if (!symbol) {
+      return res.status(400).json({ error: 'Symbol parameter required' });
+    }
+    
+    const price = await fetchQuoteWithFallback(symbol);
+    if (isFinite(price)) {
+      res.json({ symbol, price, source: 'enhanced_fallback' });
+    } else {
+      res.status(404).json({ error: 'Quote not found from any source' });
+    }
+  } catch (e) {
+    console.error('Error in /api/quote/enhanced:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // LLM config (model/base) for frontend awareness
