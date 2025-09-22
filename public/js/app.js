@@ -20,6 +20,8 @@ class StockPredictionApp {
         this.fallbackBackendBase = window.location.origin;
         // Alpha Vantage proxy base (backend only; no frontend key)
         this.apiUrl = `${this.backendBase}/api/alphavantage`;
+        // Force Yahoo-only data path when backend is unreliable
+        this.useYahooOnly = true;
         
         // Alternative data sources when Yahoo Finance fails
         this.alternativeDataSources = {
@@ -1806,9 +1808,16 @@ class StockPredictionApp {
             }
 
             // 2) Direct Yahoo via CORS-friendly proxy (no compression issues)
+            const baseQuote = `finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`;
             const directUrls = [
-                `https://r.jina.ai/http://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`,
-                `https://r.jina.ai/http://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`
+                `https://r.jina.ai/https://query1.${baseQuote}`,
+                `https://r.jina.ai/http://query1.${baseQuote}`,
+                `https://r.jina.ai/https://query2.${baseQuote}`,
+                `https://r.jina.ai/http://query2.${baseQuote}`,
+                `https://cors.isomorphic-git.org/https://query1.${baseQuote}`,
+                `https://cors.isomorphic-git.org/https://query2.${baseQuote}`,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query1.'+baseQuote)}`,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query2.'+baseQuote)}`
             ];
             let lastErr;
             for (const u of directUrls) {
@@ -1853,9 +1862,16 @@ class StockPredictionApp {
             } catch (_) {}
 
             // 2) Direct via CORS proxy
+            const baseBatch = `finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(list)}`;
             const urls = [
-                `https://r.jina.ai/http://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(list)}`,
-                `https://r.jina.ai/http://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(list)}`
+                `https://r.jina.ai/https://query1.${baseBatch}`,
+                `https://r.jina.ai/http://query1.${baseBatch}`,
+                `https://r.jina.ai/https://query2.${baseBatch}`,
+                `https://r.jina.ai/http://query2.${baseBatch}`,
+                `https://cors.isomorphic-git.org/https://query1.${baseBatch}`,
+                `https://cors.isomorphic-git.org/https://query2.${baseBatch}`,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query1.'+baseBatch)}`,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query2.'+baseBatch)}`
             ];
             let lastErr;
             for (const u of urls) {
@@ -1924,9 +1940,16 @@ class StockPredictionApp {
             }
 
             // 2) Direct Yahoo via CORS proxy
+            const chartPath = `finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${encodeURIComponent(range)}&interval=1d&events=history&includeAdjustedClose=true`;
             const urls = [
-                `https://r.jina.ai/http://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${encodeURIComponent(range)}&interval=1d&events=history&includeAdjustedClose=true`,
-                `https://r.jina.ai/http://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${encodeURIComponent(range)}&interval=1d&events=history&includeAdjustedClose=true`
+                `https://r.jina.ai/https://query1.${chartPath}`,
+                `https://r.jina.ai/http://query1.${chartPath}`,
+                `https://r.jina.ai/https://query2.${chartPath}`,
+                `https://r.jina.ai/http://query2.${chartPath}`,
+                `https://cors.isomorphic-git.org/https://query1.${chartPath}`,
+                `https://cors.isomorphic-git.org/https://query2.${chartPath}`,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query1.'+chartPath)}`,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query2.'+chartPath)}`
             ];
             let lastErr;
             for (const u of urls) {
@@ -2016,12 +2039,14 @@ class StockPredictionApp {
                 }
             }
             
-            // Try alternative data sources before falling back to mock data
-            console.warn(`All primary APIs failed for ${symbol}, trying alternative sources`);
-            const alternativeData = await this.tryAlternativeDataSources(symbol);
-            if (alternativeData && alternativeData.closes && alternativeData.closes.length >= 30) {
-                this.showToast('使用替代數據源', 'info', 3000);
-                return alternativeData;
+            // Optionally try alternative data sources (disabled in Yahoo-only mode)
+            if (!this.useYahooOnly) {
+                console.warn(`All primary APIs failed for ${symbol}, trying alternative sources`);
+                const alternativeData = await this.tryAlternativeDataSources(symbol);
+                if (alternativeData && alternativeData.closes && alternativeData.closes.length >= 30) {
+                    this.showToast('使用替代數據源', 'info', 3000);
+                    return alternativeData;
+                }
             }
             
             // Generate mock data as last resort
