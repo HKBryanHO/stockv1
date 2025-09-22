@@ -706,7 +706,14 @@ app.get('/api/finnhub/quote', async (req, res) => {
       return res.status(400).json({ error: 'Symbol parameter required' });
     }
     if (!FINNHUB_KEY) {
-      return res.status(503).json({ error: 'Finnhub API key not configured' });
+      return res.status(503).json({ 
+        error: 'Finnhub API key not configured',
+        debug: {
+          key_exists: !!FINNHUB_KEY,
+          key_length: FINNHUB_KEY ? FINNHUB_KEY.length : 0,
+          env_keys: Object.keys(process.env).filter(k => k.includes('API'))
+        }
+      });
     }
     
     const price = await fetchQuoteFinnhub(symbol);
@@ -717,7 +724,11 @@ app.get('/api/finnhub/quote', async (req, res) => {
     }
   } catch (e) {
     console.error('Error in /api/finnhub/quote:', e);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: e.message,
+      stack: e.stack
+    });
   }
 });
 
