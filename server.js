@@ -685,6 +685,19 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Debug endpoint to check environment variables
+app.get('/api/debug/env', (req, res) => {
+  res.json({
+    finnhub_configured: !!FINNHUB_KEY,
+    fmp_configured: !!FMP_KEY,
+    polygon_configured: !!POLYGON_KEY,
+    alpha_configured: !!ALPHA_KEY,
+    finnhub_key_length: FINNHUB_KEY ? FINNHUB_KEY.length : 0,
+    fmp_key_length: FMP_KEY ? FMP_KEY.length : 0,
+    polygon_key_length: POLYGON_KEY ? POLYGON_KEY.length : 0
+  });
+});
+
 // New API endpoints for enhanced data sources
 app.get('/api/finnhub/quote', async (req, res) => {
   try {
