@@ -1869,21 +1869,45 @@ class StockPredictionApp {
 
     async fetchYahooQuotesBatch(symbols) {
         const fetchOnce = async () => {
+            // 1) Try enhanced quote endpoint for each symbol individually
+            const map = {};
+            const promises = symbols.map(async (symbol) => {
+                try {
+                    const url = `${this.backendBase}/api/quote/enhanced?symbol=${encodeURIComponent(symbol)}`;
+                    const resp = await fetch(url);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.price && isFinite(data.price)) {
+                            map[symbol] = Number(data.price);
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`Enhanced quote failed for ${symbol}:`, e);
+                }
+            });
+            
+            await Promise.all(promises);
+            
+            // If we got some results, return them
+            if (Object.keys(map).length > 0) {
+                return map;
+            }
+            
+            // 2) Fallback to batch Yahoo endpoint
             const list = symbols.join(',');
-            // 1) Backend
             try {
                 const url = `${this.backendBase}/api/yahoo/quote?symbol=${encodeURIComponent(list)}`;
                 const resp = await fetch(url);
                 if (resp.ok) {
                     const data = await resp.json();
                     const results = data?.quoteResponse?.result || [];
-                    const map = {};
+                    const batchMap = {};
                     results.forEach(r => {
                         const sym = r.symbol;
                         const p = r.regularMarketPrice ?? r.postMarketPrice ?? r.preMarketPrice;
-                        if (sym && isFinite(p)) map[sym] = Number(p);
+                        if (sym && isFinite(p)) batchMap[sym] = Number(p);
                     });
-                    return map;
+                    return batchMap;
                 }
             } catch (_) {}
 
