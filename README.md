@@ -28,9 +28,82 @@
 - Redis 6+
 - Docker & Docker Compose (可選)
 
-## 🔌 接入 xAI Grok（數據提取與分析，含串流與快取）
+## 🔌 API 配置指南
 
-### 環境變數
+### 🚀 快速設置
+
+1. **複製環境配置**：
+   ```bash
+   cp env.example .env
+   ```
+
+2. **運行設置腳本**：
+   ```bash
+   # Windows
+   setup-apis.bat
+   
+   # Linux/Mac
+   ./setup-apis.sh
+   ```
+
+3. **測試 API 配置**：
+   ```bash
+   node test-apis.js
+   ```
+
+### 📊 推薦 API 配置
+
+#### 最小配置 (只需2個API)
+```bash
+# 主要數據源
+FINNHUB_API_KEY=你的_finnhub_金鑰
+FMP_API_KEY=你的_fmp_金鑰
+```
+
+#### 完整配置 (最佳體驗)
+```bash
+# 1. Finnhub API (推薦 - 最穩定)
+FINNHUB_API_KEY=你的_finnhub_金鑰
+
+# 2. Financial Modeling Prep (基本面數據)
+FMP_API_KEY=你的_fmp_金鑰
+
+# 3. Polygon.io (美股專業數據)
+POLYGON_API_KEY=你的_polygon_金鑰
+
+# 4. Alpha Vantage (備用數據源)
+ALPHA_VANTAGE_KEY=你的_alpha_vantage_金鑰
+```
+
+### 🔑 API 註冊連結
+
+| API | 免費額度 | 註冊連結 | 推薦度 |
+|-----|----------|----------|--------|
+| **Finnhub** | 60次/分鐘 | [註冊](https://finnhub.io/register) | ⭐⭐⭐⭐⭐ |
+| **FMP** | 250次/天 | [註冊](https://financialmodelingprep.com/developer/docs) | ⭐⭐⭐⭐ |
+| **Polygon.io** | 5次/分鐘 | [註冊](https://polygon.io/) | ⭐⭐⭐ |
+| **Alpha Vantage** | 5次/分鐘 | [註冊](https://www.alphavantage.co/support/#api-key) | ⭐⭐ |
+
+### 🧪 測試 API 配置
+
+```bash
+# 檢查 API 配置狀態
+curl "http://localhost:3001/api/debug/env"
+
+# 測試增強版端點
+curl "http://localhost:3001/api/quote/enhanced?symbol=AAPL"
+
+# 測試市場預測頁面
+curl "http://localhost:3001/api/market/insights?symbols=AAPL,MSFT,GOOGL"
+```
+
+### 📖 詳細設置指南
+
+查看 `API_SETUP_GUIDE.md` 獲取完整的API配置說明。
+
+### 🔌 接入 xAI Grok（數據提取與分析，含串流與快取）
+
+#### 環境變數
 
 在 `.env`（或部署平臺環境）設定：
 
@@ -40,7 +113,7 @@ XAI_API_BASE= # 留空使用預設，例如 https://api.x.ai/v1/chat/completions
 XAI_MODEL=grok-2-latest
 ```
 
-同時保留 Alpha Vantage 與其他原有設定。
+同時保留股票數據 API 與其他原有設定。
 
 ### 後端代理端點
 
