@@ -377,19 +377,14 @@ class StockPredictionApp {
                 if (resp.ok) {
                     const data = await resp.json();
                     const seriesMap = data.series || {};
-                    const symbols = Object.keys(seriesMap);
-                    if (symbols.length) {
-                        const ymap = await this.fetchYahooQuotesBatch(symbols);
-                        symbols.forEach(sym => {
-                            const px = ymap[sym];
-                            const sd = seriesMap[sym];
-                            if (isFinite(px) && sd && sd.closes && sd.closes.length) {
-                                sd.closes[sd.closes.length - 1] = Number(px);
-                            }
-                        });
+                    console.log('Market insights data received:', data);
+                    
+                    // Backend already provides complete data with real-time quotes via enhanced APIs
+                    // No need to fetch quotes again - just use the data directly
+                    if (Object.keys(seriesMap).length > 0) {
+                        container.innerHTML = this.buildMarketDashboardTemplate(seriesMap, aiRecommendedSymbols);
+                        return;
                     }
-                    container.innerHTML = this.buildMarketDashboardTemplate(seriesMap, aiRecommendedSymbols);
-                    return;
                 }
             }
         } catch (e) {
