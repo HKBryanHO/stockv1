@@ -464,11 +464,11 @@ class StockPredictionApp {
         try {
             // Use AI screener to get market recommendations with random variation
             const queries = [
-                "推薦10隻最具投資價值的股票，包括科技、金融、醫療等不同行業，基於當前市場趨勢和基本面分析",
-                "基於量化分析，推薦當前市場最具潛力的股票，考慮技術指標、基本面、市場情緒等因素",
-                "你係一名擁有超過30年數學博士學位經驗的專業投資者同樣係最高級既程式員，專注於量化金融、隨機過程和機器學習模型在投資決策中的應用。分析方法強調多路徑評估：結合基本面（財務數據）、技術指標（歷史價格模式）、情緒指標（新聞和社交媒體）、以及數學模型（如蒙特卡洛模擬和時間序列預測），以捕捉不確定性並提供概率性洞見。分析當前市場機會，推薦10隻具有成長潛力的股票，涵蓋不同行業和市值",
-                "基於AI和機器學習趨勢，推薦相關的優質股票投資機會",
-                "考慮當前經濟環境，推薦具有防禦性和成長性的股票組合"
+                "推薦10隻最具投資價值的美股，包括科技、金融、醫療等不同行業，基於當前市場趨勢和基本面分析。只推薦美股代碼如AAPL、MSFT、GOOGL等",
+                "基於量化分析，推薦當前市場最具潛力的美股，考慮技術指標、基本面、市場情緒等因素。只推薦美股代碼",
+                "你係一名擁有超過30年數學博士學位經驗的專業投資者同樣係最高級既程式員，專注於量化金融、隨機過程和機器學習模型在投資決策中的應用。分析方法強調多路徑評估：結合基本面（財務數據）、技術指標（歷史價格模式）、情緒指標（新聞和社交媒體）、以及數學模型（如蒙特卡洛模擬和時間序列預測），以捕捉不確定性並提供概率性洞見。分析當前市場機會，推薦10隻具有成長潛力的美股，涵蓋不同行業和市值。只推薦美股代碼如NVDA、AAPL、MSFT等",
+                "基於AI和機器學習趨勢，推薦相關的優質美股投資機會。只推薦美股代碼",
+                "考慮當前經濟環境，推薦具有防禦性和成長性的美股組合。只推薦美股代碼"
             ];
             const randomQuery = queries[Math.floor(Math.random() * queries.length)];
             console.log('Sending AI screener request:', randomQuery);
@@ -491,16 +491,27 @@ class StockPredictionApp {
                 
                 if (data && data.result && data.result.selected && Array.isArray(data.result.selected)) {
                     const symbols = data.result.selected.filter(Boolean);
-                    console.log('AI recommended symbols:', symbols);
-                    return symbols;
+                    // Filter out non-US stocks and invalid symbols
+                    const validSymbols = symbols.filter(s => {
+                        const symbol = (s + '').trim().toUpperCase();
+                        // Accept US stocks (letters only) and some HK stocks
+                        return /^[A-Z]{1,5}$/.test(symbol) || /\.HK$/.test(symbol) || symbol === 'BABA';
+                    });
+                    console.log('AI recommended symbols (filtered):', validSymbols);
+                    return validSymbols.length > 0 ? validSymbols : ['NVDA', 'PLTR', 'MSFT', 'GOOGL', 'AVGO', 'AMD', 'IONQ', 'LLY', 'ABBV'];
                 } else if (data && data.candidates && Array.isArray(data.candidates)) {
                     const symbols = data.candidates.map(c => c.symbol).filter(Boolean);
-                    console.log('AI recommended symbols:', symbols);
-                    return symbols;
+                    // Filter out non-US stocks and invalid symbols
+                    const validSymbols = symbols.filter(s => {
+                        const symbol = (s + '').trim().toUpperCase();
+                        return /^[A-Z]{1,5}$/.test(symbol) || /\.HK$/.test(symbol) || symbol === 'BABA';
+                    });
+                    console.log('AI recommended symbols (filtered):', validSymbols);
+                    return validSymbols.length > 0 ? validSymbols : ['NVDA', 'PLTR', 'MSFT', 'GOOGL', 'AVGO', 'AMD', 'IONQ', 'LLY', 'ABBV'];
                 } else {
                     console.log('No candidates found in AI response, using fallback');
                     // Return fallback symbols if AI fails
-                    return ['NVDA', 'PLTR', 'MSFT', 'GOOGL', '9988.HK', '0700.HK', 'AVGO', 'AMD', 'IONQ', 'LLY', 'ABBV'];
+                    return ['NVDA', 'PLTR', 'MSFT', 'GOOGL', 'AVGO', 'AMD', 'IONQ', 'LLY', 'ABBV'];
                 }
             } else {
                 const errorText = await response.text();
