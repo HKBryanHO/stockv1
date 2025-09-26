@@ -1,5 +1,5 @@
 -- 多用戶系統數據庫結構
--- 支持SQLite, PostgreSQL, MySQL
+-- SQLite 兼容版本
 
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -7,12 +7,12 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(100),
-    role ENUM('admin', 'user', 'premium') DEFAULT 'user',
-    status ENUM('active', 'inactive', 'suspended') DEFAULT 'active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_login TIMESTAMP,
-    preferences JSON,
+    role TEXT DEFAULT 'user' CHECK(role IN ('admin', 'user', 'premium')),
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_login DATETIME,
+    preferences TEXT,
     api_quota INTEGER DEFAULT 1000,
     api_usage INTEGER DEFAULT 0
 );
@@ -21,8 +21,8 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     session_token VARCHAR(255) UNIQUE NOT NULL,
-    expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     ip_address VARCHAR(45),
     user_agent TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -32,10 +32,10 @@ CREATE TABLE IF NOT EXISTS user_portfolios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     name VARCHAR(100) NOT NULL,
-    holdings JSON NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    is_default BOOLEAN DEFAULT FALSE,
+    holdings TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_default INTEGER DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -43,10 +43,10 @@ CREATE TABLE IF NOT EXISTS user_predictions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     symbol VARCHAR(20) NOT NULL,
-    prediction_data JSON NOT NULL,
+    prediction_data TEXT NOT NULL,
     model_used VARCHAR(50),
-    confidence_score DECIMAL(5,2),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    confidence_score REAL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
