@@ -50,6 +50,17 @@ CREATE TABLE IF NOT EXISTS user_predictions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS user_queries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username VARCHAR(50) NOT NULL,
+    type VARCHAR(20) NOT NULL CHECK(type IN ('stock', 'ai', 'prediction', 'analysis')),
+    content TEXT NOT NULL,
+    result TEXT,
+    metadata TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+);
+
 -- 索引優化
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -60,6 +71,9 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expires ON user_sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_portfolios_user_id ON user_portfolios(user_id);
 CREATE INDEX IF NOT EXISTS idx_predictions_user_id ON user_predictions(user_id);
 CREATE INDEX IF NOT EXISTS idx_predictions_symbol ON user_predictions(symbol);
+CREATE INDEX IF NOT EXISTS idx_queries_username ON user_queries(username);
+CREATE INDEX IF NOT EXISTS idx_queries_type ON user_queries(type);
+CREATE INDEX IF NOT EXISTS idx_queries_created_at ON user_queries(created_at);
 
 -- 插入默認管理員用戶 (密碼: admin123)
 INSERT OR IGNORE INTO users (username, email, password_hash, full_name, role) 

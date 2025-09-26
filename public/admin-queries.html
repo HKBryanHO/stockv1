@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>查詢記錄管理 - 股票預測模型</title>
+    <meta name="theme-color" content="#0a0e1a">
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        .admin-container { max-width: 1400px; margin: 0 auto; padding: 20px; color: #e5e7eb; }
+        .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .admin-header h1 { margin: 0; font-size: 28px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: #0b1220; border: 1px solid #1f2937; border-radius: 10px; padding: 20px; text-align: center; }
+        .stat-card h3 { margin: 0 0 10px 0; color: #94a3b8; font-size: 14px; text-transform: uppercase; }
+        .stat-card .value { font-size: 32px; font-weight: 700; color: #3b82f6; }
+        .filters-section { background: #0b1220; border: 1px solid #1f2937; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+        .filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .filter-group { display: flex; flex-direction: column; }
+        .filter-group label { margin-bottom: 5px; font-weight: 500; color: #94a3b8; }
+        .filter-group input, .filter-group select { padding: 8px; border: 1px solid #374151; border-radius: 6px; background: #0a0e1a; color: #e5e7eb; }
+        .queries-section { background: #0b1220; border: 1px solid #1f2937; border-radius: 10px; padding: 20px; }
+        .queries-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .queries-table { width: 100%; border-collapse: collapse; }
+        .queries-table th, .queries-table td { padding: 12px; text-align: left; border-bottom: 1px solid #1f2937; }
+        .queries-table th { background: #1f2937; color: #e5e7eb; font-weight: 600; }
+        .queries-table tr:hover { background: #1f2937; }
+        .query-type { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+        .type-stock { background: #059669; color: white; }
+        .type-ai { background: #7c3aed; color: white; }
+        .type-prediction { background: #dc2626; color: white; }
+        .query-content { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .query-details { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .action-buttons { display: flex; gap: 8px; }
+        .btn-small { padding: 6px 12px; font-size: 12px; }
+        .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 20px; }
+        .pagination button { padding: 8px 16px; border: 1px solid #374151; background: #0a0e1a; color: #e5e7eb; border-radius: 6px; cursor: pointer; }
+        .pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .pagination button.active { background: #3b82f6; border-color: #3b82f6; }
+        .loading { text-align: center; padding: 40px; color: #94a3b8; }
+        .error { color: #ef4444; text-align: center; padding: 20px; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; }
+        .modal-content { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #0b1220; border: 1px solid #1f2937; border-radius: 10px; padding: 30px; min-width: 600px; max-width: 90vw; max-height: 90vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-header h3 { margin: 0; }
+        .close-btn { background: none; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; }
+        .query-detail-content { background: #1f2937; padding: 15px; border-radius: 6px; margin: 10px 0; }
+        .query-detail-content pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
+        .export-buttons { display: flex; gap: 10px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <div class="admin-header">
+            <h1>查詢記錄管理</h1>
+            <div>
+                <button class="btn btn-secondary" onclick="location.href='/admin'">返回用戶管理</button>
+                <button class="btn btn-primary" onclick="location.href='/index.html'">前往預測器</button>
+            </div>
+        </div>
+
+        <!-- 統計卡片 -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <h3>總查詢數</h3>
+                <div class="value" id="totalQueries">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>股票查詢</h3>
+                <div class="value" id="stockQueries">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>AI 問答</h3>
+                <div class="value" id="aiQueries">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>今日查詢</h3>
+                <div class="value" id="todayQueries">-</div>
+            </div>
+        </div>
+
+        <!-- 篩選器 -->
+        <div class="filters-section">
+            <h3>篩選條件</h3>
+            <div class="filters-grid">
+                <div class="filter-group">
+                    <label for="filterUser">用戶</label>
+                    <select id="filterUser">
+                        <option value="">所有用戶</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filterType">查詢類型</label>
+                    <select id="filterType">
+                        <option value="">所有類型</option>
+                        <option value="stock">股票查詢</option>
+                        <option value="ai">AI 問答</option>
+                        <option value="prediction">預測查詢</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filterDateFrom">開始日期</label>
+                    <input id="filterDateFrom" type="date">
+                </div>
+                <div class="filter-group">
+                    <label for="filterDateTo">結束日期</label>
+                    <input id="filterDateTo" type="date">
+                </div>
+                <div class="filter-group">
+                    <label for="filterKeyword">關鍵字</label>
+                    <input id="filterKeyword" type="text" placeholder="搜索查詢內容">
+                </div>
+            </div>
+            <div style="margin-top: 15px;">
+                <button class="btn btn-primary" onclick="applyFilters()">應用篩選</button>
+                <button class="btn btn-secondary" onclick="clearFilters()">清除篩選</button>
+            </div>
+        </div>
+
+        <!-- 導出按鈕 -->
+        <div class="export-buttons">
+            <button class="btn btn-secondary" onclick="exportToCSV()">導出 CSV</button>
+            <button class="btn btn-secondary" onclick="exportToJSON()">導出 JSON</button>
+        </div>
+
+        <!-- 查詢記錄列表 -->
+        <div class="queries-section">
+            <div class="queries-header">
+                <h2>查詢記錄</h2>
+                <div>
+                    <button class="btn btn-secondary btn-small" onclick="refreshQueries()">刷新</button>
+                </div>
+            </div>
+            
+            <div id="queriesContent">
+                <div class="loading">載入中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 查詢詳情模態框 -->
+    <div id="queryDetailModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>查詢詳情</h3>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div id="queryDetailContent">
+                <!-- 查詢詳情內容將在這裡動態載入 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let currentFilters = {};
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadQueryStats();
+            loadUsers();
+            loadQueries();
+        });
+
+        async function loadQueryStats() {
+            try {
+                const response = await fetch('/api/admin/queries/stats');
+                const data = await response.json();
+                
+                if (response.ok && data.stats) {
+                    document.getElementById('totalQueries').textContent = data.stats.total_queries || 0;
+                    document.getElementById('stockQueries').textContent = data.stats.stock_queries || 0;
+                    document.getElementById('aiQueries').textContent = data.stats.ai_queries || 0;
+                    document.getElementById('todayQueries').textContent = data.stats.today_queries || 0;
+                }
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/admin/users?limit=100');
+                const data = await response.json();
+                
+                if (response.ok && data.users) {
+                    const userSelect = document.getElementById('filterUser');
+                    userSelect.innerHTML = '<option value="">所有用戶</option>';
+                    
+                    data.users.forEach(user => {
+                        const option = document.createElement('option');
+                        option.value = user.username;
+                        option.textContent = `${user.username} (${user.full_name || user.email})`;
+                        userSelect.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load users:', error);
+            }
+        }
+
+        async function loadQueries() {
+            const content = document.getElementById('queriesContent');
+            content.innerHTML = '<div class="loading">載入中...</div>';
+
+            try {
+                const params = new URLSearchParams({
+                    page: currentPage,
+                    limit: 20,
+                    ...currentFilters
+                });
+
+                const response = await fetch(`/api/admin/queries?${params}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to load queries');
+                }
+
+                if (data.queries && data.queries.length > 0) {
+                    renderQueriesTable(data.queries, data.pagination);
+                } else {
+                    content.innerHTML = '<div class="error">沒有找到查詢記錄</div>';
+                }
+            } catch (error) {
+                console.error('Failed to load queries:', error);
+                content.innerHTML = `<div class="error">載入失敗: ${error.message}</div>`;
+            }
+        }
+
+        function renderQueriesTable(queries, pagination) {
+            const content = document.getElementById('queriesContent');
+            
+            let html = `
+                <table class="queries-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>用戶</th>
+                            <th>類型</th>
+                            <th>查詢內容</th>
+                            <th>結果摘要</th>
+                            <th>查詢時間</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            queries.forEach(query => {
+                const typeClass = `type-${query.type}`;
+                const queryTime = new Date(query.created_at).toLocaleString();
+                const contentPreview = query.content ? query.content.substring(0, 50) + '...' : '-';
+                const resultPreview = query.result ? query.result.substring(0, 50) + '...' : '-';
+
+                html += `
+                    <tr>
+                        <td>${query.id}</td>
+                        <td>${query.username}</td>
+                        <td><span class="query-type ${typeClass}">${query.type}</span></td>
+                        <td class="query-content" title="${query.content || ''}">${contentPreview}</td>
+                        <td class="query-details" title="${query.result || ''}">${resultPreview}</td>
+                        <td>${queryTime}</td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn btn-primary btn-small" onclick="viewQueryDetail(${query.id})">查看詳情</button>
+                                <button class="btn btn-danger btn-small" onclick="deleteQuery(${query.id})">刪除</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+
+            // 添加分頁
+            if (pagination.total > pagination.limit) {
+                const totalPages = Math.ceil(pagination.total / pagination.limit);
+                html += '<div class="pagination">';
+                
+                // 上一頁
+                html += `<button ${currentPage <= 1 ? 'disabled' : ''} onclick="changePage(${currentPage - 1})">上一頁</button>`;
+                
+                // 頁碼
+                for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) {
+                    const activeClass = i === currentPage ? 'active' : '';
+                    html += `<button class="${activeClass}" onclick="changePage(${i})">${i}</button>`;
+                }
+                
+                // 下一頁
+                html += `<button ${currentPage >= totalPages ? 'disabled' : ''} onclick="changePage(${currentPage + 1})">下一頁</button>`;
+                
+                html += '</div>';
+            }
+
+            content.innerHTML = html;
+        }
+
+        function changePage(page) {
+            currentPage = page;
+            loadQueries();
+        }
+
+        function refreshQueries() {
+            loadQueryStats();
+            loadQueries();
+        }
+
+        function applyFilters() {
+            currentFilters = {
+                user: document.getElementById('filterUser').value,
+                type: document.getElementById('filterType').value,
+                date_from: document.getElementById('filterDateFrom').value,
+                date_to: document.getElementById('filterDateTo').value,
+                keyword: document.getElementById('filterKeyword').value
+            };
+            
+            // 移除空值
+            Object.keys(currentFilters).forEach(key => {
+                if (!currentFilters[key]) {
+                    delete currentFilters[key];
+                }
+            });
+            
+            currentPage = 1;
+            loadQueries();
+        }
+
+        function clearFilters() {
+            document.getElementById('filterUser').value = '';
+            document.getElementById('filterType').value = '';
+            document.getElementById('filterDateFrom').value = '';
+            document.getElementById('filterDateTo').value = '';
+            document.getElementById('filterKeyword').value = '';
+            
+            currentFilters = {};
+            currentPage = 1;
+            loadQueries();
+        }
+
+        async function viewQueryDetail(queryId) {
+            try {
+                const response = await fetch(`/api/admin/queries/${queryId}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to load query details');
+                }
+
+                const modal = document.getElementById('queryDetailModal');
+                const content = document.getElementById('queryDetailContent');
+                
+                content.innerHTML = `
+                    <div class="query-detail-content">
+                        <h4>查詢信息</h4>
+                        <p><strong>ID:</strong> ${data.id}</p>
+                        <p><strong>用戶:</strong> ${data.username}</p>
+                        <p><strong>類型:</strong> ${data.type}</p>
+                        <p><strong>查詢時間:</strong> ${new Date(data.created_at).toLocaleString()}</p>
+                    </div>
+                    <div class="query-detail-content">
+                        <h4>查詢內容</h4>
+                        <pre>${data.content || '無內容'}</pre>
+                    </div>
+                    <div class="query-detail-content">
+                        <h4>查詢結果</h4>
+                        <pre>${data.result || '無結果'}</pre>
+                    </div>
+                    ${data.metadata ? `
+                    <div class="query-detail-content">
+                        <h4>元數據</h4>
+                        <pre>${JSON.stringify(data.metadata, null, 2)}</pre>
+                    </div>
+                    ` : ''}
+                `;
+                
+                modal.style.display = 'block';
+            } catch (error) {
+                console.error('Failed to load query details:', error);
+                alert('載入查詢詳情失敗: ' + error.message);
+            }
+        }
+
+        async function deleteQuery(queryId) {
+            if (!confirm('確定要刪除這個查詢記錄嗎？此操作無法撤銷。')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/queries/${queryId}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert('查詢記錄已刪除');
+                    refreshQueries();
+                } else {
+                    alert('刪除失敗: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Delete query error:', error);
+                alert('刪除失敗: ' + error.message);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('queryDetailModal').style.display = 'none';
+        }
+
+        function exportToCSV() {
+            // 實現 CSV 導出功能
+            alert('CSV 導出功能需要進一步實現');
+        }
+
+        function exportToJSON() {
+            // 實現 JSON 導出功能
+            alert('JSON 導出功能需要進一步實現');
+        }
+
+        // 點擊模態框外部關閉
+        window.onclick = function(event) {
+            const modal = document.getElementById('queryDetailModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+</html>

@@ -2086,6 +2086,186 @@ app.post('/api/setup/admin', async (req, res) => {
   }
 });
 
+// Query Records Management APIs
+app.get('/api/admin/queries/stats', adminRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Admin features are not available. Database not initialized.' });
+  }
+
+  try {
+    const db = userManager.db;
+    const stats = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT 
+          COUNT(*) as total_queries,
+          COUNT(CASE WHEN type = 'stock' THEN 1 END) as stock_queries,
+          COUNT(CASE WHEN type = 'ai' THEN 1 END) as ai_queries,
+          COUNT(CASE WHEN date(created_at) = date('now') THEN 1 END) as today_queries
+        FROM user_queries
+      `;
+      db.get(sql, (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+
+    res.json({ stats });
+  } catch (error) {
+    console.error('Query stats error:', error);
+    res.status(500).json({ error: 'Failed to load query statistics' });
+  }
+});
+
+app.get('/api/admin/queries', adminRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Admin features are not available. Database not initialized.' });
+  }
+
+  try {
+    const { page = 1, limit = 20, user, type, date_from, date_to, keyword } = req.query;
+    const offset = (page - 1) * limit;
+    
+    let whereConditions = [];
+    let params = [];
+
+    if (user) {
+      whereConditions.push('q.username = ?');
+      params.push(user);
+    }
+    if (type) {
+      whereConditions.push('q.type = ?');
+      params.push(type);
+    }
+    if (date_from) {
+      whereConditions.push('date(q.created_at) >= ?');
+      params.push(date_from);
+    }
+    if (date_to) {
+      whereConditions.push('date(q.created_at) <= ?');
+      params.push(date_to);
+    }
+    if (keyword) {
+      whereConditions.push('(q.content LIKE ? OR q.result LIKE ?)');
+      params.push(`%${keyword}%`, `%${keyword}%`);
+    }
+
+    const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+    
+    const db = userManager.db;
+    
+    // 獲取查詢記錄
+    const queries = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT q.*, u.full_name, u.email
+        FROM user_queries q
+        LEFT JOIN users u ON q.username = u.username
+        ${whereClause}
+        ORDER BY q.created_at DESC
+        LIMIT ? OFFSET ?
+      `;
+      db.all(sql, [...params, limit, offset], (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+
+    // 獲取總數
+    const total = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT COUNT(*) as count
+        FROM user_queries q
+        ${whereClause}
+      `;
+      db.get(sql, params, (err, row) => {
+        if (err) reject(err);
+        else resolve(row.count);
+      });
+    });
+
+    res.json({
+      queries,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Query list error:', error);
+    res.status(500).json({ error: 'Failed to load queries' });
+  }
+});
+
+app.get('/api/admin/queries/:queryId', adminRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Admin features are not available. Database not initialized.' });
+  }
+
+  try {
+    const { queryId } = req.params;
+    const db = userManager.db;
+    
+    const query = await new Promise((resolve, reject) => {
+      const sql = `
+        SELECT q.*, u.full_name, u.email
+        FROM user_queries q
+        LEFT JOIN users u ON q.username = u.username
+        WHERE q.id = ?
+      `;
+      db.get(sql, [queryId], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+
+    if (!query) {
+      return res.status(404).json({ error: 'Query not found' });
+    }
+
+    res.json(query);
+  } catch (error) {
+    console.error('Query detail error:', error);
+    res.status(500).json({ error: 'Failed to load query details' });
+  }
+});
+
+app.delete('/api/admin/queries/:queryId', adminRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Admin features are not available. Database not initialized.' });
+  }
+
+  try {
+    const { queryId } = req.params;
+    const db = userManager.db;
+    
+    const deleted = await new Promise((resolve, reject) => {
+      db.run('DELETE FROM user_queries WHERE id = ?', [queryId], function(err) {
+        if (err) reject(err);
+        else resolve(this.changes > 0);
+      });
+    });
+
+    if (deleted) {
+      res.json({ success: true, message: 'Query deleted successfully' });
+    } else {
+      res.status(404).json({ error: 'Query not found' });
+    }
+  } catch (error) {
+    console.error('Delete query error:', error);
+    res.status(500).json({ error: 'Failed to delete query' });
+  }
+});
+
+// Admin queries page
+app.get('/admin-queries', authRequired, (req, res) => {
+  // Check if user is admin
+  if (req.user.role !== 'admin') {
+    return res.status(403).send('Access denied. Admin privileges required.');
+  }
+  res.sendFile('admin-queries.html', { root: 'public' });
+});
+
 app.listen(PORT, () => {
   console.log(`Proxy server listening on http://localhost:${PORT}`);
 });
