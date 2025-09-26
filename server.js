@@ -2257,6 +2257,133 @@ app.delete('/api/admin/queries/:queryId', adminRequired, async (req, res) => {
   }
 });
 
+// 記錄用戶查詢的 API 端點
+app.post('/api/log-query', authRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Database not initialized' });
+  }
+
+  try {
+    const { type, content, result, metadata } = req.body;
+    const username = req.user.username;
+
+    if (!type || !content) {
+      return res.status(400).json({ error: 'Type and content are required' });
+    }
+
+    const db = userManager.db;
+    const insertSQL = `
+      INSERT INTO user_queries (username, type, content, result, metadata) 
+      VALUES (?, ?, ?, ?, ?)
+    `;
+
+    const queryId = await new Promise((resolve, reject) => {
+      db.run(insertSQL, [username, type, content, result, JSON.stringify(metadata || {})], function(err) {
+        if (err) reject(err);
+        else resolve(this.lastID);
+      });
+    });
+
+    res.json({ 
+      success: true, 
+      queryId,
+      message: 'Query logged successfully' 
+    });
+  } catch (error) {
+    console.error('Log query error:', error);
+    res.status(500).json({ error: 'Failed to log query' });
+  }
+});
+
+// 記錄股票查詢的專用端點
+app.post('/api/log-stock-query', authRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Database not initialized' });
+  }
+
+  try {
+    const { symbol, query, result, price, change } = req.body;
+    const username = req.user.username;
+
+    if (!symbol || !query) {
+      return res.status(400).json({ error: 'Symbol and query are required' });
+    }
+
+    const db = userManager.db;
+    const insertSQL = `
+      INSERT INTO user_queries (username, type, content, result, metadata) 
+      VALUES (?, 'stock', ?, ?, ?)
+    `;
+
+    const metadata = {
+      symbol: symbol,
+      price: price,
+      change: change,
+      timestamp: new Date().toISOString()
+    };
+
+    const queryId = await new Promise((resolve, reject) => {
+      db.run(insertSQL, [username, query, result, JSON.stringify(metadata)], function(err) {
+        if (err) reject(err);
+        else resolve(this.lastID);
+      });
+    });
+
+    res.json({ 
+      success: true, 
+      queryId,
+      message: 'Stock query logged successfully' 
+    });
+  } catch (error) {
+    console.error('Log stock query error:', error);
+    res.status(500).json({ error: 'Failed to log stock query' });
+  }
+});
+
+// 記錄 AI 查詢的專用端點
+app.post('/api/log-ai-query', authRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Database not initialized' });
+  }
+
+  try {
+    const { question, answer, model, category } = req.body;
+    const username = req.user.username;
+
+    if (!question || !answer) {
+      return res.status(400).json({ error: 'Question and answer are required' });
+    }
+
+    const db = userManager.db;
+    const insertSQL = `
+      INSERT INTO user_queries (username, type, content, result, metadata) 
+      VALUES (?, 'ai', ?, ?, ?)
+    `;
+
+    const metadata = {
+      model: model || 'GPT-4',
+      category: category || 'general',
+      timestamp: new Date().toISOString()
+    };
+
+    const queryId = await new Promise((resolve, reject) => {
+      db.run(insertSQL, [username, question, answer, JSON.stringify(metadata)], function(err) {
+        if (err) reject(err);
+        else resolve(this.lastID);
+      });
+    });
+
+    res.json({ 
+      success: true, 
+      queryId,
+      message: 'AI query logged successfully' 
+    });
+  } catch (error) {
+    console.error('Log AI query error:', error);
+    res.status(500).json({ error: 'Failed to log AI query' });
+  }
+});
+
 // Admin queries page
 app.get('/admin-queries', authRequired, (req, res) => {
   // Check if user is admin
