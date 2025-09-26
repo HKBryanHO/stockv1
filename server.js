@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 const http = require('http');
 const crypto = require('crypto');
 const zlib = require('zlib');
+const UserManager = require('./auth/userManager');
 
 dotenv.config();
 
@@ -30,7 +31,10 @@ const AUTH_USER = (process.env.AUTH_USER || 'admin').toString();
 const AUTH_PASS = (process.env.AUTH_PASS || process.env.AUTH_PASSWORD || '').toString();
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS || (12 * 60 * 60 * 1000));
 
-// Minimal in-memory session store
+// Initialize User Manager
+const userManager = new UserManager();
+
+// Minimal in-memory session store (fallback)
 const sessions = new Map(); // token -> { user, exp }
 function parseCookies(req) {
   const header = req.headers['cookie'] || '';
@@ -45,23 +49,52 @@ function parseCookies(req) {
   });
   return out;
 }
-function getSession(req) {
+async function getSession(req) {
   try {
     const cookies = parseCookies(req);
     const token = cookies['sp_session'];
     if (!token) return null;
+
+    // Try database session first
+    try {
+      const dbSession = await userManager.getSession(token);
+      if (dbSession) {
+        return { 
+          token, 
+          user: { 
+            id: dbSession.user_id,
+            username: dbSession.username, 
+            email: dbSession.email,
+            full_name: dbSession.full_name,
+            role: dbSession.role 
+          } 
+        };
+      }
+    } catch (dbError) {
+      console.warn('Database session check failed, falling back to memory:', dbError.message);
+    }
+
+    // Fallback to memory sessions
     const rec = sessions.get(token);
     if (!rec) return null;
     if (Date.now() > rec.exp) { sessions.delete(token); return null; }
     return { token, user: rec.user };
   } catch { return null; }
 }
-function authRequired(req, res, next) {
-  const sess = getSession(req);
-  if (sess) return next();
-  // redirect to login preserving destination
-  const dest = encodeURIComponent(req.originalUrl || '/predictor');
-  return res.redirect(`/login?next=${dest}`);
+async function authRequired(req, res, next) {
+  try {
+    const sess = await getSession(req);
+    if (sess) {
+      req.user = sess.user;
+      return next();
+    }
+    // redirect to login preserving destination
+    const dest = encodeURIComponent(req.originalUrl || '/predictor');
+    return res.redirect(`/login?next=${dest}`);
+  } catch (error) {
+    console.error('Auth check error:', error);
+    return res.status(500).json({ error: 'Authentication error' });
+  }
 }
 
 // Grok ops helpers: rate limit, coalescing, telemetry, safety
@@ -1649,38 +1682,264 @@ app.get('/login', (req, res) => {
   res.sendFile('login.html', { root: 'public' });
 });
 
+// Register page
+app.get('/register', (req, res) => {
+  res.sendFile('register.html', { root: 'public' });
+});
+
+// Admin page (protected)
+app.get('/admin', authRequired, (req, res) => {
+  // Check if user is admin
+  if (req.user.role !== 'admin') {
+    return res.status(403).send('Access denied. Admin privileges required.');
+  }
+  res.sendFile('admin.html', { root: 'public' });
+});
+
 // Auth endpoints
-app.post('/auth/login', (req, res) => {
+app.post('/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body || {};
-    if (!AUTH_PASS) {
-      return res.status(500).json({ error: 'AUTH_PASSWORD not configured on server' });
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
     }
-    if ((username || '').toString() !== AUTH_USER || (password || '').toString() !== AUTH_PASS) {
-      return res.status(401).json({ error: 'invalid_credentials' });
+
+    // Try database authentication first
+    try {
+      const user = await userManager.authenticateUser(username, password);
+      if (user) {
+        // Create database session
+        const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+        const userAgent = req.headers['user-agent'];
+        const sessionResult = await userManager.createSession(user.id, ipAddress, userAgent);
+        
+        const secure = (req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https');
+        const cookie = `sp_session=${encodeURIComponent(sessionResult.token)}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}; Max-Age=${Math.floor(SESSION_TTL_MS/1000)}`;
+        res.setHeader('Set-Cookie', cookie);
+        
+        const next = (req.query && req.query.next) || req.body?.next || '/predictor';
+        return res.json({ ok: true, next, user: { username: user.username, role: user.role } });
+      }
+    } catch (dbError) {
+      console.warn('Database authentication failed, trying fallback:', dbError.message);
     }
-    const token = crypto.randomBytes(24).toString('hex');
-    sessions.set(token, { user: AUTH_USER, exp: Date.now() + SESSION_TTL_MS });
-    const secure = (req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https');
-    const cookie = `sp_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}; Max-Age=${Math.floor(SESSION_TTL_MS/1000)}`;
-    res.setHeader('Set-Cookie', cookie);
-    const next = (req.query && req.query.next) || req.body?.next || '/predictor';
-    return res.json({ ok: true, next });
+
+    // Fallback to legacy authentication
+    if (AUTH_PASS && (username || '').toString() === AUTH_USER && (password || '').toString() === AUTH_PASS) {
+      const token = crypto.randomBytes(24).toString('hex');
+      sessions.set(token, { user: AUTH_USER, exp: Date.now() + SESSION_TTL_MS });
+      const secure = (req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https');
+      const cookie = `sp_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}; Max-Age=${Math.floor(SESSION_TTL_MS/1000)}`;
+      res.setHeader('Set-Cookie', cookie);
+      const next = (req.query && req.query.next) || req.body?.next || '/predictor';
+      return res.json({ ok: true, next, user: { username: AUTH_USER, role: 'admin' } });
+    }
+
+    return res.status(401).json({ error: 'Invalid username or password' });
   } catch (e) {
+    console.error('Login error:', e);
     return res.status(500).json({ error: e && e.message ? e.message : 'login_error' });
   }
 });
 
-app.post('/auth/logout', (req, res) => {
+app.post('/auth/logout', async (req, res) => {
   try {
     const cookies = parseCookies(req);
     const token = cookies['sp_session'];
-    if (token) sessions.delete(token);
+    
+    if (token) {
+      // Try to delete database session first
+      try {
+        await userManager.deleteSession(token);
+      } catch (dbError) {
+        console.warn('Database session deletion failed:', dbError.message);
+      }
+      
+      // Also remove from memory sessions
+      sessions.delete(token);
+    }
+    
     const secure = (req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https');
     res.setHeader('Set-Cookie', `sp_session=; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}; Max-Age=0`);
     return res.json({ ok: true });
-  } catch {
+  } catch (e) {
+    console.error('Logout error:', e);
     return res.json({ ok: true });
+  }
+});
+
+// User Management APIs
+app.post('/api/users/register', async (req, res) => {
+  try {
+    const { username, email, password, fullName } = req.body;
+    
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'Username, email, and password are required' });
+    }
+
+    // Basic validation
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    const user = await userManager.createUser({
+      username,
+      email,
+      password,
+      fullName,
+      role: 'user'
+    });
+
+    res.status(201).json({ 
+      success: true, 
+      user: { 
+        id: user.id, 
+        username: user.username, 
+        email: user.email, 
+        full_name: user.fullName,
+        role: user.role 
+      } 
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/users/profile', authRequired, async (req, res) => {
+  try {
+    const user = await userManager.getUserById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const { password_hash, ...userProfile } = user;
+    res.json(userProfile);
+  } catch (error) {
+    console.error('Profile fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+app.put('/api/users/profile', authRequired, async (req, res) => {
+  try {
+    const updates = req.body;
+    const allowedFields = ['full_name', 'email'];
+    const filteredUpdates = {};
+    
+    for (const [key, value] of Object.entries(updates)) {
+      if (allowedFields.includes(key) && value !== undefined) {
+        filteredUpdates[key] = value;
+      }
+    }
+
+    if (Object.keys(filteredUpdates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    const success = await userManager.updateUser(req.user.id, filteredUpdates);
+    if (success) {
+      res.json({ success: true, message: 'Profile updated successfully' });
+    } else {
+      res.status(404).json({ error: 'User not found' });
+    }
+  } catch (error) {
+    console.error('Profile update error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// Admin only endpoints
+async function adminRequired(req, res, next) {
+  try {
+    const sess = await getSession(req);
+    if (!sess || sess.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    req.user = sess.user;
+    next();
+  } catch (error) {
+    console.error('Admin auth check error:', error);
+    return res.status(500).json({ error: 'Authentication error' });
+  }
+}
+
+app.get('/api/admin/users', adminRequired, async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    
+    const users = await userManager.getAllUsers(parseInt(limit), offset);
+    const stats = await userManager.getUserStats();
+    
+    res.json({
+      users,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: stats.total_users
+      },
+      stats
+    });
+  } catch (error) {
+    console.error('Admin users fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+app.put('/api/admin/users/:userId', adminRequired, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const updates = req.body;
+    
+    const allowedFields = ['role', 'status', 'api_quota'];
+    const filteredUpdates = {};
+    
+    for (const [key, value] of Object.entries(updates)) {
+      if (allowedFields.includes(key) && value !== undefined) {
+        filteredUpdates[key] = value;
+      }
+    }
+
+    if (Object.keys(filteredUpdates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    const success = await userManager.updateUser(parseInt(userId), filteredUpdates);
+    if (success) {
+      res.json({ success: true, message: 'User updated successfully' });
+    } else {
+      res.status(404).json({ error: 'User not found' });
+    }
+  } catch (error) {
+    console.error('Admin user update error:', error);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+app.delete('/api/admin/users/:userId', adminRequired, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (parseInt(userId) === req.user.id) {
+      return res.status(400).json({ error: 'Cannot delete your own account' });
+    }
+
+    const success = await userManager.deleteUser(parseInt(userId));
+    if (success) {
+      res.json({ success: true, message: 'User deactivated successfully' });
+    } else {
+      res.status(404).json({ error: 'User not found' });
+    }
+  } catch (error) {
+    console.error('Admin user deletion error:', error);
+    res.status(500).json({ error: 'Failed to delete user' });
   }
 });
 

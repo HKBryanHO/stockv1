@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>註冊 - 股票預測模型</title>
+    <meta name="theme-color" content="#0a0e1a">
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        .register-wrap { max-width: 480px; margin: 8vh auto; background: #0b1220; border: 1px solid #1f2937; border-radius: 10px; padding: 32px; color:#e5e7eb; }
+        .register-wrap h1 { margin: 0 0 20px 0; font-size: 24px; text-align: center; }
+        .register-wrap .form-group { margin-bottom: 16px; }
+        .register-wrap label { display:block; margin: 8px 0 6px 0; font-weight: 500; }
+        .register-wrap input { width: 100%; padding: 12px 16px; border-radius: 8px; border: 1px solid #374151; background:#0a0e1a; color:#e5e7eb; font-size: 14px; }
+        .register-wrap input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+        .register-wrap .btn { width: 100%; margin-top: 20px; padding: 12px; }
+        .register-wrap .login-link { text-align: center; margin-top: 20px; color:#94a3b8; font-size: 14px; }
+        .register-wrap .login-link a { color: #3b82f6; text-decoration: none; }
+        .register-wrap .login-link a:hover { text-decoration: underline; }
+        .help { color:#94a3b8; font-size: 12px; margin-top: 6px; }
+        .err { color: #ef4444; margin-top: 8px; min-height: 18px; }
+        .success { color: #10b981; margin-top: 8px; min-height: 18px; }
+        .password-strength { margin-top: 6px; font-size: 12px; }
+        .strength-weak { color: #ef4444; }
+        .strength-medium { color: #f59e0b; }
+        .strength-strong { color: #10b981; }
+    </style>
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const form = document.getElementById('registerForm');
+        const errEl = document.getElementById('err');
+        const successEl = document.getElementById('success');
+        const passwordInput = document.getElementById('password');
+        const strengthEl = document.getElementById('passwordStrength');
+
+        // 密碼強度檢查
+        passwordInput.addEventListener('input', () => {
+            const password = passwordInput.value;
+            const strength = checkPasswordStrength(password);
+            strengthEl.textContent = strength.text;
+            strengthEl.className = `password-strength strength-${strength.level}`;
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errEl.textContent = '';
+            successEl.textContent = '';
+            
+            const fd = new FormData(form);
+            const username = (fd.get('username')||'').toString().trim();
+            const email = (fd.get('email')||'').toString().trim();
+            const password = (fd.get('password')||'').toString();
+            const confirmPassword = (fd.get('confirmPassword')||'').toString();
+            const fullName = (fd.get('fullName')||'').toString().trim();
+
+            // 基本驗證
+            if (!username || !email || !password) {
+                errEl.textContent = '請填寫所有必填欄位';
+                return;
+            }
+
+            if (password !== confirmPassword) {
+                errEl.textContent = '密碼確認不匹配';
+                return;
+            }
+
+            if (password.length < 6) {
+                errEl.textContent = '密碼長度至少6個字符';
+                return;
+            }
+
+            try {
+                const resp = await fetch('/api/users/register', {
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password, fullName })
+                });
+                
+                const result = await resp.json();
+                
+                if (!resp.ok || result.error) {
+                    errEl.textContent = result.error || '註冊失敗';
+                    return;
+                }
+                
+                successEl.textContent = '註冊成功！正在跳轉到登入頁面...';
+                setTimeout(() => {
+                    location.href = '/login?message=registered';
+                }, 2000);
+                
+            } catch (e) {
+                errEl.textContent = '網絡錯誤，請稍後再試';
+            }
+        });
+    });
+
+    function checkPasswordStrength(password) {
+        if (password.length < 6) return { level: 'weak', text: '密碼太短' };
+        if (password.length < 8) return { level: 'medium', text: '密碼強度中等' };
+        if (password.length >= 8 && /[A-Z]/.test(password) && /[0-9]/.test(password)) {
+            return { level: 'strong', text: '密碼強度強' };
+        }
+        return { level: 'medium', text: '密碼強度中等' };
+    }
+    </script>
+</head>
+<body>
+    <div class="register-wrap">
+        <h1>註冊帳戶</h1>
+        <form id="registerForm">
+            <div class="form-group">
+                <label for="username">用戶名 *</label>
+                <input id="username" name="username" type="text" placeholder="請輸入用戶名" required>
+                <div class="help">用戶名必須唯一，3-20個字符</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="email">電子郵箱 *</label>
+                <input id="email" name="email" type="email" placeholder="請輸入電子郵箱" required>
+                <div class="help">用於接收重要通知</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="fullName">姓名</label>
+                <input id="fullName" name="fullName" type="text" placeholder="請輸入您的姓名">
+                <div class="help">可選，用於個人化顯示</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">密碼 *</label>
+                <input id="password" name="password" type="password" placeholder="請輸入密碼" required>
+                <div id="passwordStrength" class="password-strength"></div>
+            </div>
+            
+            <div class="form-group">
+                <label for="confirmPassword">確認密碼 *</label>
+                <input id="confirmPassword" name="confirmPassword" type="password" placeholder="請再次輸入密碼" required>
+            </div>
+            
+            <button class="btn btn-primary" type="submit">註冊</button>
+            <div id="err" class="err"></div>
+            <div id="success" class="success"></div>
+            
+            <div class="login-link">
+                已有帳戶？<a href="/login">立即登入</a>
+            </div>
+        </form>
+    </div>
+</body>
+</html>
