@@ -1,0 +1,73 @@
+/* 修復背景顏色問題 */
+
+/* 確保 HTML 和 Body 有背景 */
+html, body {
+    background: #0a0e1a !important;
+    background-image: linear-gradient(135deg, #0a0e1a 0%, #111827 50%, #1a1f2e 100%) !important;
+    min-height: 100vh !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* 確保所有容器都有背景 */
+.container, .admin-container, .login-wrap, .simple-container, .direct-container, .basic-container {
+    background: #0b1220 !important;
+    border: 1px solid #1f2937 !important;
+    border-radius: 10px !important;
+    color: #e5e7eb !important;
+}
+
+/* 確保卡片有背景 */
+.stat-card, .users-section, .queries-section, .filters-section {
+    background: #0b1220 !important;
+    border: 1px solid #1f2937 !important;
+}
+
+/* 確保表格有背景 */
+.users-table, .queries-table {
+    background: #0b1220 !important;
+}
+
+/* 確保表單元素有背景 */
+input, select, textarea {
+    background: #0a0e1a !important;
+    color: #e5e7eb !important;
+    border: 1px solid #374151 !important;
+}
+
+/* 確保按鈕有背景 */
+.btn, .btn-primary, .btn-secondary {
+    background: #3b82f6 !important;
+    color: white !important;
+    border: none !important;
+}
+
+.btn-secondary {
+    background: #6b7280 !important;
+}
+
+/* 確保模態框有背景 */
+.modal-content {
+    background: #0b1220 !important;
+    border: 1px solid #1f2937 !important;
+    color: #e5e7eb !important;
+}
+
+/* 確保結果框有背景 */
+.result, .result-success, .result-error {
+    background: #1f2937 !important;
+    border: 1px solid #374151 !important;
+    color: #e5e7eb !important;
+}
+
+.result-success {
+    background: #065f46 !important;
+    border-color: #10b981 !important;
+    color: #10b981 !important;
+}
+
+.result-error {
+    background: #7f1d1d !important;
+    border-color: #ef4444 !important;
+    color: #ef4444 !important;
+}

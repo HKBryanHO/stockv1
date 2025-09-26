@@ -1,5 +1,77 @@
 /* Professional Financial UI Design System */
 
+/* 修復背景顏色問題 - 確保所有元素都有正確的背景 */
+html, body {
+    background: #0a0e1a !important;
+    background-image: linear-gradient(135deg, #0a0e1a 0%, #111827 50%, #1a1f2e 100%) !important;
+    min-height: 100vh !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* 確保所有容器都有背景 */
+.container, .admin-container, .login-wrap, .simple-container, .direct-container, .basic-container {
+    background: #0b1220 !important;
+    border: 1px solid #1f2937 !important;
+    border-radius: 10px !important;
+    color: #e5e7eb !important;
+}
+
+/* 確保卡片有背景 */
+.stat-card, .users-section, .queries-section, .filters-section {
+    background: #0b1220 !important;
+    border: 1px solid #1f2937 !important;
+}
+
+/* 確保表格有背景 */
+.users-table, .queries-table {
+    background: #0b1220 !important;
+}
+
+/* 確保表單元素有背景 */
+input, select, textarea {
+    background: #0a0e1a !important;
+    color: #e5e7eb !important;
+    border: 1px solid #374151 !important;
+}
+
+/* 確保按鈕有背景 */
+.btn, .btn-primary, .btn-secondary {
+    background: #3b82f6 !important;
+    color: white !important;
+    border: none !important;
+}
+
+.btn-secondary {
+    background: #6b7280 !important;
+}
+
+/* 確保模態框有背景 */
+.modal-content {
+    background: #0b1220 !important;
+    border: 1px solid #1f2937 !important;
+    color: #e5e7eb !important;
+}
+
+/* 確保結果框有背景 */
+.result, .result-success, .result-error {
+    background: #1f2937 !important;
+    border: 1px solid #374151 !important;
+    color: #e5e7eb !important;
+}
+
+.result-success {
+    background: #065f46 !important;
+    border-color: #10b981 !important;
+    color: #10b981 !important;
+}
+
+.result-error {
+    background: #7f1d1d !important;
+    border-color: #ef4444 !important;
+    color: #ef4444 !important;
+}
+
 /* Font Awesome Fallback */
 .fas, .far, .fab, .fal, .fad {
     font-family: "Font Awesome 6 Free", "Font Awesome 6 Brands", sans-serif;
@@ -21,11 +93,11 @@
 
 :root {
     /* Primary Color Palette - Advanced Dark Theme */
-    --bg-primary: linear-gradient(135deg, #0a0e1a 0%, #111827 50%, #1a1f2e 100%);
-    --bg-secondary: linear-gradient(145deg, #111827 0%, #1f2937 100%);
+    --bg-primary: #0a0e1a;
+    --bg-secondary: #111827;
     --bg-tertiary: #1f2937;
-    --bg-card: linear-gradient(145deg, #1e293b 0%, #334155 100%);
-    --bg-elevated: linear-gradient(145deg, #374151 0%, #475569 100%);
+    --bg-card: #1e293b;
+    --bg-elevated: #374151;
     --bg-glass: rgba(31, 41, 55, 0.85);
     --bg-glass-strong: rgba(15, 23, 42, 0.95);
     --bg-gradient-primary: linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%);
@@ -184,14 +256,18 @@
 html {
     font-size: 16px;
     scroll-behavior: smooth;
+    background: #0a0e1a;
+    min-height: 100vh;
 }
 
 body {
     font-family: var(--font-family-primary);
-    background: linear-gradient(135deg, var(--bg-primary) 0%, #0f172a 100%);
+    background: #0a0e1a;
+    background-image: linear-gradient(135deg, #0a0e1a 0%, #111827 50%, #1a1f2e 100%);
     color: var(--text-primary);
     line-height: 1.6;
     font-weight: 400;
+    min-height: 100vh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
