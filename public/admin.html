@@ -304,8 +304,83 @@
         }
 
         function showCreateUserModal() {
-            // 這裡可以實現創建用戶的模態框
-            alert('創建用戶功能需要進一步實現');
+            // 創建用戶模態框
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.style.display = 'block';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>創建新用戶</h3>
+                        <button class="close-btn" onclick="this.closest('.modal').remove()">&times;</button>
+                    </div>
+                    <form id="createUserForm">
+                        <div class="form-group">
+                            <label for="createUsername">用戶名</label>
+                            <input id="createUsername" name="username" type="text" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="createEmail">郵箱</label>
+                            <input id="createEmail" name="email" type="email" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="createPassword">密碼</label>
+                            <input id="createPassword" name="password" type="password" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="createFullName">全名</label>
+                            <input id="createFullName" name="fullName" type="text">
+                        </div>
+                        <div class="form-group">
+                            <label for="createRole">角色</label>
+                            <select id="createRole" name="role">
+                                <option value="user">用戶</option>
+                                <option value="admin">管理員</option>
+                                <option value="premium">高級用戶</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="createApiQuota">API 配額</label>
+                            <input id="createApiQuota" name="api_quota" type="number" min="0" step="100" value="1000">
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').remove()">取消</button>
+                            <button type="submit" class="btn btn-primary">創建用戶</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // 處理表單提交
+            document.getElementById('createUserForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const formData = new FormData(e.target);
+                const userData = Object.fromEntries(formData.entries());
+                
+                try {
+                    const response = await fetch('/api/users/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(userData)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (response.ok) {
+                        alert('用戶創建成功！');
+                        modal.remove();
+                        refreshUsers();
+                    } else {
+                        alert('創建失敗: ' + result.error);
+                    }
+                } catch (error) {
+                    console.error('Create user error:', error);
+                    alert('創建失敗: ' + error.message);
+                }
+            });
         }
 
         // 編輯用戶表單提交
