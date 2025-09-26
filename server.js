@@ -5,7 +5,14 @@ const dotenv = require('dotenv');
 const http = require('http');
 const crypto = require('crypto');
 const zlib = require('zlib');
-const UserManager = require('./auth/userManager');
+// Try to load UserManager, fallback to null if sqlite3 is not available
+let UserManager = null;
+try {
+  UserManager = require('./auth/userManager');
+} catch (error) {
+  console.warn('UserManager not available:', error.message);
+  console.warn('Multi-user features will be disabled. Using legacy authentication.');
+}
 
 dotenv.config();
 
@@ -31,8 +38,16 @@ const AUTH_USER = (process.env.AUTH_USER || 'admin').toString();
 const AUTH_PASS = (process.env.AUTH_PASS || process.env.AUTH_PASSWORD || '').toString();
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS || (12 * 60 * 60 * 1000));
 
-// Initialize User Manager
-const userManager = new UserManager();
+// Initialize User Manager (if available)
+let userManager = null;
+if (UserManager) {
+  try {
+    userManager = new UserManager();
+  } catch (error) {
+    console.warn('Failed to initialize UserManager:', error.message);
+    userManager = null;
+  }
+}
 
 // Minimal in-memory session store (fallback)
 const sessions = new Map(); // token -> { user, exp }
@@ -55,23 +70,25 @@ async function getSession(req) {
     const token = cookies['sp_session'];
     if (!token) return null;
 
-    // Try database session first
-    try {
-      const dbSession = await userManager.getSession(token);
-      if (dbSession) {
-        return { 
-          token, 
-          user: { 
-            id: dbSession.user_id,
-            username: dbSession.username, 
-            email: dbSession.email,
-            full_name: dbSession.full_name,
-            role: dbSession.role 
-          } 
-        };
+    // Try database session first (if userManager is available)
+    if (userManager) {
+      try {
+        const dbSession = await userManager.getSession(token);
+        if (dbSession) {
+          return { 
+            token, 
+            user: { 
+              id: dbSession.user_id,
+              username: dbSession.username, 
+              email: dbSession.email,
+              full_name: dbSession.full_name,
+              role: dbSession.role 
+            } 
+          };
+        }
+      } catch (dbError) {
+        console.warn('Database session check failed, falling back to memory:', dbError.message);
       }
-    } catch (dbError) {
-      console.warn('Database session check failed, falling back to memory:', dbError.message);
     }
 
     // Fallback to memory sessions
@@ -1672,6 +1689,22 @@ app.post('/api/sim/garch', (req, res) => {
   res.json(computeBandsFromCloses(closes, days, 0.9));
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    features: {
+      userManager: !!userManager,
+      database: !!userManager,
+      multiUser: !!userManager
+    }
+  };
+  res.json(health);
+});
+
 // Root route -> login homepage
 app.get('/', (req, res) => {
   return res.redirect('/login');
@@ -1705,24 +1738,26 @@ app.post('/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Username and password are required' });
     }
 
-    // Try database authentication first
-    try {
-      const user = await userManager.authenticateUser(username, password);
-      if (user) {
-        // Create database session
-        const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
-        const userAgent = req.headers['user-agent'];
-        const sessionResult = await userManager.createSession(user.id, ipAddress, userAgent);
-        
-        const secure = (req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https');
-        const cookie = `sp_session=${encodeURIComponent(sessionResult.token)}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}; Max-Age=${Math.floor(SESSION_TTL_MS/1000)}`;
-        res.setHeader('Set-Cookie', cookie);
-        
-        const next = (req.query && req.query.next) || req.body?.next || '/predictor';
-        return res.json({ ok: true, next, user: { username: user.username, role: user.role } });
+    // Try database authentication first (if userManager is available)
+    if (userManager) {
+      try {
+        const user = await userManager.authenticateUser(username, password);
+        if (user) {
+          // Create database session
+          const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+          const userAgent = req.headers['user-agent'];
+          const sessionResult = await userManager.createSession(user.id, ipAddress, userAgent);
+          
+          const secure = (req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https');
+          const cookie = `sp_session=${encodeURIComponent(sessionResult.token)}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}; Max-Age=${Math.floor(SESSION_TTL_MS/1000)}`;
+          res.setHeader('Set-Cookie', cookie);
+          
+          const next = (req.query && req.query.next) || req.body?.next || '/predictor';
+          return res.json({ ok: true, next, user: { username: user.username, role: user.role } });
+        }
+      } catch (dbError) {
+        console.warn('Database authentication failed, trying fallback:', dbError.message);
       }
-    } catch (dbError) {
-      console.warn('Database authentication failed, trying fallback:', dbError.message);
     }
 
     // Fallback to legacy authentication
@@ -1749,11 +1784,13 @@ app.post('/auth/logout', async (req, res) => {
     const token = cookies['sp_session'];
     
     if (token) {
-      // Try to delete database session first
-      try {
-        await userManager.deleteSession(token);
-      } catch (dbError) {
-        console.warn('Database session deletion failed:', dbError.message);
+      // Try to delete database session first (if userManager is available)
+      if (userManager) {
+        try {
+          await userManager.deleteSession(token);
+        } catch (dbError) {
+          console.warn('Database session deletion failed:', dbError.message);
+        }
       }
       
       // Also remove from memory sessions
@@ -1771,6 +1808,10 @@ app.post('/auth/logout', async (req, res) => {
 
 // User Management APIs
 app.post('/api/users/register', async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'User registration is not available. Database not initialized.' });
+  }
+
   try {
     const { username, email, password, fullName } = req.body;
     
@@ -1813,6 +1854,10 @@ app.post('/api/users/register', async (req, res) => {
 });
 
 app.get('/api/users/profile', authRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'User profile is not available. Database not initialized.' });
+  }
+
   try {
     const user = await userManager.getUserById(req.user.id);
     if (!user) {
@@ -1828,6 +1873,10 @@ app.get('/api/users/profile', authRequired, async (req, res) => {
 });
 
 app.put('/api/users/profile', authRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'User profile update is not available. Database not initialized.' });
+  }
+
   try {
     const updates = req.body;
     const allowedFields = ['full_name', 'email'];
@@ -1871,6 +1920,10 @@ async function adminRequired(req, res, next) {
 }
 
 app.get('/api/admin/users', adminRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Admin features are not available. Database not initialized.' });
+  }
+
   try {
     const { page = 1, limit = 20 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -1894,6 +1947,10 @@ app.get('/api/admin/users', adminRequired, async (req, res) => {
 });
 
 app.put('/api/admin/users/:userId', adminRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Admin features are not available. Database not initialized.' });
+  }
+
   try {
     const { userId } = req.params;
     const updates = req.body;
@@ -1924,6 +1981,10 @@ app.put('/api/admin/users/:userId', adminRequired, async (req, res) => {
 });
 
 app.delete('/api/admin/users/:userId', adminRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Admin features are not available. Database not initialized.' });
+  }
+
   try {
     const { userId } = req.params;
     
