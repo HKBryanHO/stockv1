@@ -347,6 +347,8 @@ class StockPredictionApp {
             this.history.render();
         } else if (tabName === 'market') {
             this.renderMarketDashboard();
+        } else if (tabName === 'admin') {
+            this.loadAdminPanel();
         }
     }
 
@@ -5138,3 +5140,246 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     } catch (_) {}
 });
+
+// 管理員功能
+StockPredictionApp.prototype.loadAdminPanel = function() {
+    // 檢查用戶權限
+    this.checkAdminAccess();
+    
+    // 設置事件監聽器
+    this.setupAdminEventListeners();
+    
+    // 載入用戶列表
+    this.loadUsersList();
+};
+
+StockPredictionApp.prototype.checkAdminAccess = function() {
+    // 檢查當前用戶是否為管理員
+    fetch('/api/users/profile')
+        .then(response => {
+            if (response.ok) {
+                return response.json();
+            }
+            throw new Error('Not authenticated');
+        })
+        .then(user => {
+            if (user.role === 'admin') {
+                // 顯示管理員標籤
+                const adminTab = document.getElementById('tab-admin');
+                if (adminTab) {
+                    adminTab.style.display = 'block';
+                }
+            } else {
+                // 隱藏管理員標籤
+                const adminTab = document.getElementById('tab-admin');
+                if (adminTab) {
+                    adminTab.style.display = 'none';
+                }
+                // 如果當前在管理員標籤，切換到預測標籤
+                if (document.getElementById('admin-tab').classList.contains('active')) {
+                    this.switchTab('predict');
+                }
+            }
+        })
+        .catch(error => {
+            console.warn('Admin access check failed:', error);
+            // 隱藏管理員標籤
+            const adminTab = document.getElementById('tab-admin');
+            if (adminTab) {
+                adminTab.style.display = 'none';
+            }
+        });
+};
+
+StockPredictionApp.prototype.setupAdminEventListeners = function() {
+    // 刷新用戶列表
+    const refreshBtn = document.getElementById('refreshUsers');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => this.loadUsersList());
+    }
+    
+    // 創建用戶
+    const createBtn = document.getElementById('createUser');
+    if (createBtn) {
+        createBtn.addEventListener('click', () => this.showCreateUserModal());
+    }
+    
+    // 保存權限設置
+    const saveBtn = document.getElementById('savePermissions');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', () => this.savePermissions());
+    }
+};
+
+StockPredictionApp.prototype.loadUsersList = function() {
+    const usersList = document.getElementById('usersList');
+    if (!usersList) return;
+    
+    usersList.innerHTML = '<div class="loading">載入中...</div>';
+    
+    fetch('/api/admin/users')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to load users');
+            }
+            return response.json();
+        })
+        .then(data => {
+            this.renderUsersList(data.users);
+        })
+        .catch(error => {
+            console.error('Failed to load users:', error);
+            usersList.innerHTML = `<div class="error">載入失敗: ${error.message}</div>`;
+        });
+};
+
+StockPredictionApp.prototype.renderUsersList = function(users) {
+    const usersList = document.getElementById('usersList');
+    if (!usersList) return;
+    
+    if (!users || users.length === 0) {
+        usersList.innerHTML = '<div class="error">沒有找到用戶</div>';
+        return;
+    }
+    
+    let html = '';
+    users.forEach(user => {
+        const roleClass = `role-${user.role}`;
+        const createdDate = new Date(user.created_at).toLocaleDateString();
+        const lastLogin = user.last_login ? new Date(user.last_login).toLocaleDateString() : '從未';
+        
+        html += `
+            <div class="user-item">
+                <div class="user-info">
+                    <div>
+                        <strong>${user.username}</strong>
+                        <span class="user-role ${roleClass}">${user.role}</span>
+                    </div>
+                    <div style="font-size: 12px; color: #94a3b8;">
+                        ${user.email} | 創建: ${createdDate} | 最後登入: ${lastLogin}
+                    </div>
+                </div>
+                <div class="user-actions">
+                    <button class="btn btn-primary btn-sm" onclick="app.editUser(${user.id})">
+                        <i class="fas fa-edit"></i> 編輯
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="app.deleteUser(${user.id})">
+                        <i class="fas fa-trash"></i> 刪除
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    usersList.innerHTML = html;
+};
+
+StockPredictionApp.prototype.showCreateUserModal = function() {
+    // 簡單的創建用戶提示
+    const username = prompt('輸入新用戶名:');
+    if (!username) return;
+    
+    const email = prompt('輸入電子郵箱:');
+    if (!email) return;
+    
+    const password = prompt('輸入密碼:');
+    if (!password) return;
+    
+    const fullName = prompt('輸入姓名 (可選):') || '';
+    
+    this.createUser({
+        username,
+        email,
+        password,
+        fullName
+    });
+};
+
+StockPredictionApp.prototype.createUser = function(userData) {
+    fetch('/api/users/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userData)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            alert('用戶創建成功！');
+            this.loadUsersList();
+        } else {
+            alert('創建失敗: ' + result.error);
+        }
+    })
+    .catch(error => {
+        console.error('Create user error:', error);
+        alert('創建失敗: ' + error.message);
+    });
+};
+
+StockPredictionApp.prototype.editUser = function(userId) {
+    const newRole = prompt('選擇新角色 (admin/user/premium):');
+    if (!newRole || !['admin', 'user', 'premium'].includes(newRole)) return;
+    
+    fetch(`/api/admin/users/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            alert('用戶已更新！');
+            this.loadUsersList();
+        } else {
+            alert('更新失敗: ' + result.error);
+        }
+    })
+    .catch(error => {
+        console.error('Update user error:', error);
+        alert('更新失敗: ' + error.message);
+    });
+};
+
+StockPredictionApp.prototype.deleteUser = function(userId) {
+    if (!confirm('確定要刪除這個用戶嗎？')) return;
+    
+    fetch(`/api/admin/users/${userId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            alert('用戶已刪除！');
+            this.loadUsersList();
+        } else {
+            alert('刪除失敗: ' + result.error);
+        }
+    })
+    .catch(error => {
+        console.error('Delete user error:', error);
+        alert('刪除失敗: ' + error.message);
+    });
+};
+
+StockPredictionApp.prototype.savePermissions = function() {
+    // 收集權限設置
+    const permissions = {
+        user: {
+            news: document.getElementById('user-news')?.checked || false,
+            portfolio: document.getElementById('user-portfolio')?.checked || false,
+            advanced: document.getElementById('user-advanced')?.checked || false
+        },
+        premium: {
+            news: document.getElementById('premium-news')?.checked || false,
+            portfolio: document.getElementById('premium-portfolio')?.checked || false,
+            advanced: document.getElementById('premium-advanced')?.checked || false,
+            export: document.getElementById('premium-export')?.checked || false,
+            api: document.getElementById('premium-api')?.checked || false
+        }
+    };
+    
+    // 保存到本地存儲
+    localStorage.setItem('userPermissions', JSON.stringify(permissions));
+    
+    alert('權限設置已保存！');
+};

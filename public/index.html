@@ -10,6 +10,120 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
     <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Admin Tab Styles */
+        .admin-section {
+            background: #0b1220;
+            border: 1px solid #1f2937;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .admin-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .users-list {
+            min-height: 200px;
+        }
+        
+        .user-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border: 1px solid #1f2937;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            background: #0a0e1a;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .user-role {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .role-admin { background: #dc2626; color: white; }
+        .role-user { background: #059669; color: white; }
+        .role-premium { background: #7c3aed; color: white; }
+        
+        .user-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .permissions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .permission-card {
+            background: #0a0e1a;
+            border: 1px solid #1f2937;
+            border-radius: 8px;
+            padding: 16px;
+        }
+        
+        .permission-card h4 {
+            margin: 0 0 12px 0;
+            color: #3b82f6;
+        }
+        
+        .permission-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .permission-list label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
+        .permission-list input[type="checkbox"] {
+            margin: 0;
+        }
+        
+        .permission-actions {
+            text-align: center;
+            padding-top: 20px;
+            border-top: 1px solid #1f2937;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #94a3b8;
+        }
+        
+        .error {
+            color: #ef4444;
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -46,6 +160,10 @@
                     <button id="tab-prochart" class="nav-tab" data-tab="prochart" role="tab" aria-controls="prochart-tab" aria-selected="false" tabindex="-1" data-i18n="nav.prochart">
                         <i class="fas fa-chart-area"></i>
                         Pro Chart
+                    </button>
+                    <button id="tab-admin" class="nav-tab" data-tab="admin" role="tab" aria-controls="admin-tab" aria-selected="false" tabindex="-1" data-i18n="nav.admin" style="display: none;">
+                        <i class="fas fa-users-cog"></i>
+                        用戶管理
                     </button>
                     <button id="tab-settings" class="nav-tab" data-tab="settings" role="tab" aria-controls="settings-tab" aria-selected="false" tabindex="-1" data-i18n="nav.settings">
                         <i class="fas fa-cog"></i>
@@ -487,6 +605,75 @@
                                 <button id="loginBtn" class="btn btn-secondary">Login</button>
                                 <div id="loginStatus" class="help-text">未登入（Guest）</div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Tab -->
+            <div id="admin-tab" class="tab-content" role="tabpanel" aria-labelledby="tab-admin" tabindex="0" style="display: none;">
+                <div class="container">
+                    <h2>用戶管理</h2>
+                    <div class="admin-section">
+                        <div class="admin-header">
+                            <h3>用戶列表</h3>
+                            <div class="admin-actions">
+                                <button id="refreshUsers" class="btn btn-secondary btn-sm">
+                                    <i class="fas fa-sync"></i> 刷新
+                                </button>
+                                <button id="createUser" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-plus"></i> 創建用戶
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div id="usersList" class="users-list">
+                            <div class="loading">載入中...</div>
+                        </div>
+                    </div>
+                    
+                    <div class="admin-section">
+                        <h3>功能權限設置</h3>
+                        <div class="permissions-grid">
+                            <div class="permission-card">
+                                <h4>普通用戶 (user)</h4>
+                                <div class="permission-list">
+                                    <label><input type="checkbox" checked disabled> 基本股票預測</label>
+                                    <label><input type="checkbox" checked disabled> 個人資料管理</label>
+                                    <label><input type="checkbox" id="user-news"> 新聞分析</label>
+                                    <label><input type="checkbox" id="user-portfolio"> 投資組合分析</label>
+                                    <label><input type="checkbox" id="user-advanced"> 高級圖表</label>
+                                </div>
+                            </div>
+                            
+                            <div class="permission-card">
+                                <h4>高級用戶 (premium)</h4>
+                                <div class="permission-list">
+                                    <label><input type="checkbox" checked disabled> 基本股票預測</label>
+                                    <label><input type="checkbox" checked disabled> 個人資料管理</label>
+                                    <label><input type="checkbox" checked id="premium-news"> 新聞分析</label>
+                                    <label><input type="checkbox" checked id="premium-portfolio"> 投資組合分析</label>
+                                    <label><input type="checkbox" checked id="premium-advanced"> 高級圖表</label>
+                                    <label><input type="checkbox" id="premium-export"> 數據導出</label>
+                                    <label><input type="checkbox" id="premium-api"> 高級API配額</label>
+                                </div>
+                            </div>
+                            
+                            <div class="permission-card">
+                                <h4>管理員 (admin)</h4>
+                                <div class="permission-list">
+                                    <label><input type="checkbox" checked disabled> 所有功能</label>
+                                    <label><input type="checkbox" checked disabled> 用戶管理</label>
+                                    <label><input type="checkbox" checked disabled> 系統設置</label>
+                                    <label><input type="checkbox" checked disabled> 數據庫管理</label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="permission-actions">
+                            <button id="savePermissions" class="btn btn-primary">
+                                <i class="fas fa-save"></i> 保存權限設置
+                            </button>
                         </div>
                     </div>
                 </div>
