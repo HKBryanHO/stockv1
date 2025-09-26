@@ -2017,6 +2017,75 @@ app.get('/predictor', authRequired, (req, res) => {
 // Serve static files from public directory (after protected HTML routes)
 app.use(express.static('public'));
 
+// Setup endpoint for creating admin accounts
+app.post('/api/setup/admin', async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'User management is not available. Database not initialized.' });
+  }
+
+  try {
+    const { username, email, password, fullName } = req.body;
+    
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'Username, email, and password are required' });
+    }
+
+    // Check if user already exists
+    const existingUser = await userManager.getUserByUsername(username);
+    if (existingUser) {
+      // Update existing user to admin
+      const updated = await userManager.updateUser(existingUser.id, {
+        role: 'admin',
+        api_quota: 10000
+      });
+      
+      if (updated) {
+        return res.json({ 
+          success: true, 
+          message: 'User updated to admin',
+          user: {
+            id: existingUser.id,
+            username: existingUser.username,
+            email: existingUser.email,
+            role: 'admin'
+          }
+        });
+      } else {
+        return res.status(500).json({ error: 'Failed to update user to admin' });
+      }
+    }
+
+    // Create new admin user
+    const user = await userManager.createUser({
+      username,
+      email,
+      password,
+      fullName,
+      role: 'admin'
+    });
+
+    // Update API quota for admin
+    await userManager.updateUser(user.id, {
+      api_quota: 10000
+    });
+
+    res.status(201).json({ 
+      success: true, 
+      message: 'Admin user created successfully',
+      user: { 
+        id: user.id, 
+        username: user.username, 
+        email: user.email, 
+        full_name: user.fullName,
+        role: user.role 
+      } 
+    });
+  } catch (error) {
+    console.error('Admin setup error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Proxy server listening on http://localhost:${PORT}`);
 });
