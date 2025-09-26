@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>直接登入測試 - 股票預測模型</title>
+    <meta name="theme-color" content="#0a0e1a">
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .direct-container {
+            max-width: 500px;
+            margin: 50px auto;
+            padding: 30px;
+            background: #0b1220;
+            border: 1px solid #1f2937;
+            border-radius: 10px;
+            color: #e5e7eb;
+        }
+        .direct-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .direct-header h1 {
+            color: #3b82f6;
+            margin-bottom: 10px;
+        }
+        .credentials-box {
+            background: #1f2937;
+            padding: 20px;
+            border-radius: 6px;
+            margin-bottom: 30px;
+        }
+        .credentials-box h3 {
+            color: #fbbf24;
+            margin-bottom: 15px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #94a3b8;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            background: #0a0e1a;
+            color: #e5e7eb;
+            font-size: 16px;
+        }
+        .btn-login {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-login:hover {
+            background: #2563eb;
+        }
+        .btn-login:disabled {
+            background: #6b7280;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .result-success {
+            background: #065f46;
+            color: #10b981;
+            border: 1px solid #10b981;
+        }
+        .result-error {
+            background: #7f1d1d;
+            color: #ef4444;
+            border: 1px solid #ef4444;
+        }
+        .links {
+            margin-top: 30px;
+            text-align: center;
+        }
+        .links a {
+            color: #60a5fa;
+            text-decoration: none;
+            margin: 0 10px;
+        }
+        .links a:hover {
+            text-decoration: underline;
+        }
+        .test-accounts {
+            background: #1f2937;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        .test-accounts h4 {
+            color: #fbbf24;
+            margin-bottom: 10px;
+        }
+        .account-item {
+            margin-bottom: 8px;
+            padding: 8px;
+            background: #374151;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .account-item:hover {
+            background: #4b5563;
+        }
+    </style>
+</head>
+<body>
+    <div class="direct-container">
+        <div class="direct-header">
+            <h1>🔐 直接登入測試</h1>
+            <p>多種認證方法測試</p>
+        </div>
+
+        <div class="test-accounts">
+            <h4>📋 測試帳戶 (點擊使用)</h4>
+            <div class="account-item" onclick="useAccount('admin', 'admin123')">
+                <strong>admin</strong> / admin123 (管理員)
+            </div>
+            <div class="account-item" onclick="useAccount('Bryanho', 'Bryanho123')">
+                <strong>Bryanho</strong> / Bryanho123 (管理員)
+            </div>
+            <div class="account-item" onclick="useAccount('administrator', 'admin123')">
+                <strong>administrator</strong> / admin123 (管理員)
+            </div>
+        </div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">用戶名</label>
+                <input type="text" id="username" name="username" value="admin" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">密碼</label>
+                <input type="password" id="password" name="password" value="admin123" required>
+            </div>
+            
+            <button type="submit" class="btn-login" id="loginBtn">
+                直接登入測試
+            </button>
+        </form>
+
+        <div id="result" class="result" style="display: none;"></div>
+
+        <div class="links">
+            <a href="/simple-login.html">簡單登入</a>
+            <a href="/login.html">標準登入</a>
+            <a href="/admin">管理頁面</a>
+            <a href="/index.html">預測頁面</a>
+        </div>
+    </div>
+
+    <script>
+        function useAccount(username, password) {
+            document.getElementById('username').value = username;
+            document.getElementById('password').value = password;
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const loginBtn = document.getElementById('loginBtn');
+            const result = document.getElementById('result');
+            
+            // 禁用按鈕
+            loginBtn.disabled = true;
+            loginBtn.textContent = '登入中...';
+            result.style.display = 'none';
+            
+            try {
+                const formData = new FormData(e.target);
+                const loginData = {
+                    username: formData.get('username'),
+                    password: formData.get('password')
+                };
+                
+                console.log('登入數據:', loginData);
+                
+                // 嘗試多種登入方法
+                const loginMethods = [
+                    { url: '/auth/login', name: '標準認證' },
+                    { url: '/api/users/login', name: '用戶API' },
+                    { url: '/api/setup/admin', name: '管理員設置' }
+                ];
+                
+                let loginSuccess = false;
+                let lastError = '';
+                
+                for (const method of loginMethods) {
+                    try {
+                        console.log(`嘗試 ${method.name}: ${method.url}`);
+                        
+                        const response = await fetch(method.url, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(loginData)
+                        });
+                        
+                        const result_data = await response.json();
+                        console.log(`${method.name} 響應:`, result_data);
+                        
+                        if (response.ok && (result_data.ok || result_data.success)) {
+                            showResult('success', `✅ 登入成功！<br><br>
+                                <strong>使用的方法:</strong> ${method.name}<br>
+                                <strong>用戶信息:</strong><br>
+                                用戶名: ${result_data.user?.username || loginData.username}<br>
+                                角色: ${result_data.user?.role || 'admin'}<br><br>
+                                <strong>下一步:</strong><br>
+                                <a href="/admin" style="color: #60a5fa;">前往管理頁面</a> | 
+                                <a href="/index.html" style="color: #60a5fa;">前往預測頁面</a>`);
+                            loginSuccess = true;
+                            break;
+                        } else {
+                            lastError = result_data.error || '未知錯誤';
+                        }
+                    } catch (error) {
+                        console.warn(`${method.name} 失敗:`, error.message);
+                        lastError = error.message;
+                    }
+                }
+                
+                if (!loginSuccess) {
+                    showResult('error', `❌ 所有登入方法都失敗了<br><br>
+                        <strong>最後錯誤:</strong> ${lastError}<br><br>
+                        <strong>已嘗試的方法:</strong><br>
+                        1. 標準認證 (/auth/login)<br>
+                        2. 用戶API (/api/users/login)<br>
+                        3. 管理員設置 (/api/setup/admin)<br><br>
+                        <strong>可能的解決方案:</strong><br>
+                        1. 運行 bypass-auth-fix.js 修復數據庫<br>
+                        2. 檢查服務器是否正在運行<br>
+                        3. 查看服務器日誌<br>
+                        4. 確認數據庫連接正常`);
+                }
+                
+            } catch (error) {
+                console.error('登入錯誤:', error);
+                showResult('error', `❌ 登入失敗: ${error.message}<br><br>
+                    <strong>可能的原因:</strong><br>
+                    1. 網絡連接問題<br>
+                    2. 服務器未運行<br>
+                    3. API端點不可用<br>
+                    4. 防火牆阻擋`);
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = '直接登入測試';
+            }
+        });
+        
+        function showResult(type, message) {
+            const result = document.getElementById('result');
+            result.className = `result result-${type}`;
+            result.innerHTML = message;
+            result.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
