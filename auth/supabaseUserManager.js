@@ -18,8 +18,15 @@ class SupabaseUserManager {
 
       if (error || !user) return null;
 
-      // For now, we'll assume password verification is handled elsewhere
-      // In a real implementation, you'd verify the password hash here
+      // Verify password using bcrypt
+      const bcrypt = require('bcrypt');
+      const isValidPassword = await bcrypt.compare(password, user.password_hash);
+      
+      if (!isValidPassword) {
+        console.log('Invalid password for user:', username);
+        return null;
+      }
+
       return {
         id: user.id,
         username: user.username,
@@ -36,12 +43,16 @@ class SupabaseUserManager {
 
   async createUser(userData) {
     try {
+      // Hash the password
+      const bcrypt = require('bcrypt');
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      
       const { data, error } = await this.supabase
         .from('users')
         .insert([{
           username: userData.username,
           email: userData.email,
-          password_hash: userData.password, // In production, hash this password
+          password_hash: hashedPassword,
           full_name: userData.fullName,
           role: userData.role || 'user',
           status: 'active',
