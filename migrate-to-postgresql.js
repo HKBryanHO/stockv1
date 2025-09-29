@@ -8,19 +8,32 @@ console.log('🔄 數據庫遷移到 PostgreSQL...\n');
 
 // PostgreSQL 連接配置
 const pgConfig = {
-  user: process.env.PG_USER || 'your_username',
-  host: process.env.PG_HOST || 'your_host',
-  database: process.env.PG_DATABASE || 'your_database',
-  password: process.env.PG_PASSWORD || 'your_password',
+  user: process.env.PG_USER || 'postgres',
+  host: process.env.PG_HOST || 'db.ghtqyibmlltkpmcuuanj.supabase.co',
+  database: process.env.PG_DATABASE || 'postgres',
+  password: process.env.PG_PASSWORD || 'Bho123456!',
   port: process.env.PG_PORT || 5432,
-  ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : false
+  ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : true
 };
+
+// 如果提供了 DATABASE_URL，優先使用它
+if (process.env.DATABASE_URL) {
+  pgConfig.connectionString = process.env.DATABASE_URL;
+}
 
 // SQLite 數據庫路徑
 const sqlitePath = path.join(__dirname, 'database', 'users.db');
 
 // 創建 PostgreSQL 連接池
-const pgPool = new Pool(pgConfig);
+let pgPool;
+if (pgConfig.connectionString) {
+  pgPool = new Pool({
+    connectionString: pgConfig.connectionString,
+    ssl: { rejectUnauthorized: false }
+  });
+} else {
+  pgPool = new Pool(pgConfig);
+}
 
 // PostgreSQL 表結構
 const createTablesSQL = `

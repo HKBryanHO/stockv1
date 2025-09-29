@@ -5,13 +5,28 @@ const dotenv = require('dotenv');
 const http = require('http');
 const crypto = require('crypto');
 const zlib = require('zlib');
-// Try to load UserManager, fallback to null if sqlite3 is not available
+// Try to load SupabaseUserManager first, then fallback to PostgreSQL, then SQLite UserManager
 let UserManager = null;
 try {
-  UserManager = require('./auth/userManager');
-} catch (error) {
-  console.warn('UserManager not available:', error.message);
-  console.warn('Multi-user features will be disabled. Using legacy authentication.');
+  // Try Supabase UserManager first
+  UserManager = require('./auth/supabaseUserManager');
+  console.log('✅ Using Supabase UserManager');
+} catch (supabaseError) {
+  console.warn('Supabase UserManager not available, trying PostgreSQL:', supabaseError.message);
+  try {
+    // Try PostgreSQL UserManager second
+    UserManager = require('./auth/postgresUserManager');
+    console.log('✅ Using PostgreSQL UserManager');
+  } catch (pgError) {
+    console.warn('PostgreSQL UserManager not available, trying SQLite:', pgError.message);
+    try {
+      UserManager = require('./auth/userManager');
+      console.log('✅ Using SQLite UserManager');
+    } catch (sqliteError) {
+      console.warn('UserManager not available:', sqliteError.message);
+      console.warn('Multi-user features will be disabled. Using legacy authentication.');
+    }
+  }
 }
 
 dotenv.config();
@@ -43,6 +58,13 @@ let userManager = null;
 if (UserManager) {
   try {
     userManager = new UserManager();
+    
+    // If using PostgreSQL or Supabase, create tables if they don't exist
+    if (userManager.constructor.name === 'PostgresUserManager' || userManager.constructor.name === 'SupabaseUserManager') {
+      userManager.createTables().catch(error => {
+        console.warn('Failed to create database tables:', error.message);
+      });
+    }
   } catch (error) {
     console.warn('Failed to initialize UserManager:', error.message);
     userManager = null;
@@ -2093,23 +2115,43 @@ app.get('/api/admin/queries/stats', adminRequired, async (req, res) => {
   }
 
   try {
-    const db = userManager.db;
-    const stats = await new Promise((resolve, reject) => {
-      const sql = `
-        SELECT 
-          COUNT(*) as total_queries,
-          COUNT(CASE WHEN type = 'stock' THEN 1 END) as stock_queries,
-          COUNT(CASE WHEN type = 'ai' THEN 1 END) as ai_queries,
-          COUNT(CASE WHEN date(created_at) = date('now') THEN 1 END) as today_queries
-        FROM user_queries
-      `;
-      db.get(sql, (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
+    if (userManager.constructor.name === 'SupabaseUserManager') {
+      // Supabase query stats
+      const { data: queries, error } = await userManager.supabase
+        .from('user_queries')
+        .select('type, created_at');
 
-    res.json({ stats });
+      if (error) throw error;
+
+      const today = new Date().toISOString().split('T')[0];
+      const stats = {
+        total_queries: queries.length,
+        stock_queries: queries.filter(q => q.type === 'stock').length,
+        ai_queries: queries.filter(q => q.type === 'ai').length,
+        today_queries: queries.filter(q => q.created_at.startsWith(today)).length
+      };
+
+      res.json({ stats });
+    } else {
+      // SQLite/PostgreSQL query stats
+      const db = userManager.db;
+      const stats = await new Promise((resolve, reject) => {
+        const sql = `
+          SELECT 
+            COUNT(*) as total_queries,
+            COUNT(CASE WHEN type = 'stock' THEN 1 END) as stock_queries,
+            COUNT(CASE WHEN type = 'ai' THEN 1 END) as ai_queries,
+            COUNT(CASE WHEN date(created_at) = date('now') THEN 1 END) as today_queries
+          FROM user_queries
+        `;
+        db.get(sql, (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      });
+
+      res.json({ stats });
+    }
   } catch (error) {
     console.error('Query stats error:', error);
     res.status(500).json({ error: 'Failed to load query statistics' });
@@ -2125,72 +2167,132 @@ app.get('/api/admin/queries', adminRequired, async (req, res) => {
     const { page = 1, limit = 20, user, type, date_from, date_to, keyword } = req.query;
     const offset = (page - 1) * limit;
     
-    let whereConditions = [];
-    let params = [];
+    if (userManager.constructor.name === 'SupabaseUserManager') {
+      // Supabase query listing
+      let query = userManager.supabase
+        .from('user_queries')
+        .select(`
+          *,
+          users (
+            full_name,
+            email
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
 
-    if (user) {
-      whereConditions.push('q.username = ?');
-      params.push(user);
-    }
-    if (type) {
-      whereConditions.push('q.type = ?');
-      params.push(type);
-    }
-    if (date_from) {
-      whereConditions.push('date(q.created_at) >= ?');
-      params.push(date_from);
-    }
-    if (date_to) {
-      whereConditions.push('date(q.created_at) <= ?');
-      params.push(date_to);
-    }
-    if (keyword) {
-      whereConditions.push('(q.content LIKE ? OR q.result LIKE ?)');
-      params.push(`%${keyword}%`, `%${keyword}%`);
-    }
-
-    const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
-    
-    const db = userManager.db;
-    
-    // 獲取查詢記錄
-    const queries = await new Promise((resolve, reject) => {
-      const sql = `
-        SELECT q.*, u.full_name, u.email
-        FROM user_queries q
-        LEFT JOIN users u ON q.username = u.username
-        ${whereClause}
-        ORDER BY q.created_at DESC
-        LIMIT ? OFFSET ?
-      `;
-      db.all(sql, [...params, limit, offset], (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
-
-    // 獲取總數
-    const total = await new Promise((resolve, reject) => {
-      const sql = `
-        SELECT COUNT(*) as count
-        FROM user_queries q
-        ${whereClause}
-      `;
-      db.get(sql, params, (err, row) => {
-        if (err) reject(err);
-        else resolve(row.count);
-      });
-    });
-
-    res.json({
-      queries,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
+      // Apply filters
+      if (user) {
+        query = query.eq('username', user);
       }
-    });
+      if (type) {
+        query = query.eq('type', type);
+      }
+      if (date_from) {
+        query = query.gte('created_at', date_from);
+      }
+      if (date_to) {
+        query = query.lte('created_at', date_to);
+      }
+      if (keyword) {
+        query = query.or(`content.ilike.%${keyword}%,result.ilike.%${keyword}%`);
+      }
+
+      const { data: queries, error } = await query;
+      if (error) throw error;
+
+      // Get total count
+      let countQuery = userManager.supabase
+        .from('user_queries')
+        .select('*', { count: 'exact', head: true });
+
+      if (user) countQuery = countQuery.eq('username', user);
+      if (type) countQuery = countQuery.eq('type', type);
+      if (date_from) countQuery = countQuery.gte('created_at', date_from);
+      if (date_to) countQuery = countQuery.lte('created_at', date_to);
+      if (keyword) countQuery = countQuery.or(`content.ilike.%${keyword}%,result.ilike.%${keyword}%`);
+
+      const { count, error: countError } = await countQuery;
+      if (countError) throw countError;
+
+      res.json({
+        queries: queries || [],
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: count || 0,
+          pages: Math.ceil((count || 0) / limit)
+        }
+      });
+    } else {
+      // SQLite/PostgreSQL query listing
+      let whereConditions = [];
+      let params = [];
+
+      if (user) {
+        whereConditions.push('q.username = ?');
+        params.push(user);
+      }
+      if (type) {
+        whereConditions.push('q.type = ?');
+        params.push(type);
+      }
+      if (date_from) {
+        whereConditions.push('date(q.created_at) >= ?');
+        params.push(date_from);
+      }
+      if (date_to) {
+        whereConditions.push('date(q.created_at) <= ?');
+        params.push(date_to);
+      }
+      if (keyword) {
+        whereConditions.push('(q.content LIKE ? OR q.result LIKE ?)');
+        params.push(`%${keyword}%`, `%${keyword}%`);
+      }
+
+      const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+      
+      const db = userManager.db;
+      
+      // 獲取查詢記錄
+      const queries = await new Promise((resolve, reject) => {
+        const sql = `
+          SELECT q.*, u.full_name, u.email
+          FROM user_queries q
+          LEFT JOIN users u ON q.username = u.username
+          ${whereClause}
+          ORDER BY q.created_at DESC
+          LIMIT ? OFFSET ?
+        `;
+        db.all(sql, [...params, limit, offset], (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        });
+      });
+
+      // 獲取總數
+      const total = await new Promise((resolve, reject) => {
+        const sql = `
+          SELECT COUNT(*) as count
+          FROM user_queries q
+          ${whereClause}
+        `;
+        db.get(sql, params, (err, row) => {
+          if (err) reject(err);
+          else resolve(row.count);
+        });
+      });
+
+      res.json({
+        queries,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      });
+    }
   } catch (error) {
     console.error('Query list error:', error);
     res.status(500).json({ error: 'Failed to load queries' });
@@ -2204,26 +2306,49 @@ app.get('/api/admin/queries/:queryId', adminRequired, async (req, res) => {
 
   try {
     const { queryId } = req.params;
-    const db = userManager.db;
     
-    const query = await new Promise((resolve, reject) => {
-      const sql = `
-        SELECT q.*, u.full_name, u.email
-        FROM user_queries q
-        LEFT JOIN users u ON q.username = u.username
-        WHERE q.id = ?
-      `;
-      db.get(sql, [queryId], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
+    if (userManager.constructor.name === 'SupabaseUserManager') {
+      // Supabase query detail
+      const { data: query, error } = await userManager.supabase
+        .from('user_queries')
+        .select(`
+          *,
+          users (
+            full_name,
+            email
+          )
+        `)
+        .eq('id', queryId)
+        .single();
+
+      if (error || !query) {
+        return res.status(404).json({ error: 'Query not found' });
+      }
+
+      res.json(query);
+    } else {
+      // SQLite/PostgreSQL query detail
+      const db = userManager.db;
+      
+      const query = await new Promise((resolve, reject) => {
+        const sql = `
+          SELECT q.*, u.full_name, u.email
+          FROM user_queries q
+          LEFT JOIN users u ON q.username = u.username
+          WHERE q.id = ?
+        `;
+        db.get(sql, [queryId], (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
       });
-    });
 
-    if (!query) {
-      return res.status(404).json({ error: 'Query not found' });
+      if (!query) {
+        return res.status(404).json({ error: 'Query not found' });
+      }
+
+      res.json(query);
     }
-
-    res.json(query);
   } catch (error) {
     console.error('Query detail error:', error);
     res.status(500).json({ error: 'Failed to load query details' });
@@ -2237,19 +2362,35 @@ app.delete('/api/admin/queries/:queryId', adminRequired, async (req, res) => {
 
   try {
     const { queryId } = req.params;
-    const db = userManager.db;
     
-    const deleted = await new Promise((resolve, reject) => {
-      db.run('DELETE FROM user_queries WHERE id = ?', [queryId], function(err) {
-        if (err) reject(err);
-        else resolve(this.changes > 0);
-      });
-    });
+    if (userManager.constructor.name === 'SupabaseUserManager') {
+      // Supabase query deletion
+      const { error } = await userManager.supabase
+        .from('user_queries')
+        .delete()
+        .eq('id', queryId);
 
-    if (deleted) {
+      if (error) {
+        return res.status(500).json({ error: 'Failed to delete query' });
+      }
+
       res.json({ success: true, message: 'Query deleted successfully' });
     } else {
-      res.status(404).json({ error: 'Query not found' });
+      // SQLite/PostgreSQL query deletion
+      const db = userManager.db;
+      
+      const deleted = await new Promise((resolve, reject) => {
+        db.run('DELETE FROM user_queries WHERE id = ?', [queryId], function(err) {
+          if (err) reject(err);
+          else resolve(this.changes > 0);
+        });
+      });
+
+      if (deleted) {
+        res.json({ success: true, message: 'Query deleted successfully' });
+      } else {
+        res.status(404).json({ error: 'Query not found' });
+      }
     }
   } catch (error) {
     console.error('Delete query error:', error);
@@ -2271,24 +2412,49 @@ app.post('/api/log-query', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'Type and content are required' });
     }
 
-    const db = userManager.db;
-    const insertSQL = `
-      INSERT INTO user_queries (username, type, content, result, metadata) 
-      VALUES (?, ?, ?, ?, ?)
-    `;
+    if (userManager.constructor.name === 'SupabaseUserManager') {
+      // Supabase query logging
+      const { data, error } = await userManager.supabase
+        .from('user_queries')
+        .insert([{
+          username: username,
+          type: type,
+          content: content,
+          result: result,
+          metadata: metadata || {},
+          created_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
 
-    const queryId = await new Promise((resolve, reject) => {
-      db.run(insertSQL, [username, type, content, result, JSON.stringify(metadata || {})], function(err) {
-        if (err) reject(err);
-        else resolve(this.lastID);
+      if (error) throw error;
+
+      res.json({ 
+        success: true, 
+        queryId: data.id,
+        message: 'Query logged successfully' 
       });
-    });
+    } else {
+      // SQLite/PostgreSQL query logging
+      const db = userManager.db;
+      const insertSQL = `
+        INSERT INTO user_queries (username, type, content, result, metadata) 
+        VALUES (?, ?, ?, ?, ?)
+      `;
 
-    res.json({ 
-      success: true, 
-      queryId,
-      message: 'Query logged successfully' 
-    });
+      const queryId = await new Promise((resolve, reject) => {
+        db.run(insertSQL, [username, type, content, result, JSON.stringify(metadata || {})], function(err) {
+          if (err) reject(err);
+          else resolve(this.lastID);
+        });
+      });
+
+      res.json({ 
+        success: true, 
+        queryId,
+        message: 'Query logged successfully' 
+      });
+    }
   } catch (error) {
     console.error('Log query error:', error);
     res.status(500).json({ error: 'Failed to log query' });
@@ -2309,12 +2475,6 @@ app.post('/api/log-stock-query', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'Symbol and query are required' });
     }
 
-    const db = userManager.db;
-    const insertSQL = `
-      INSERT INTO user_queries (username, type, content, result, metadata) 
-      VALUES (?, 'stock', ?, ?, ?)
-    `;
-
     const metadata = {
       symbol: symbol,
       price: price,
@@ -2322,18 +2482,49 @@ app.post('/api/log-stock-query', authRequired, async (req, res) => {
       timestamp: new Date().toISOString()
     };
 
-    const queryId = await new Promise((resolve, reject) => {
-      db.run(insertSQL, [username, query, result, JSON.stringify(metadata)], function(err) {
-        if (err) reject(err);
-        else resolve(this.lastID);
-      });
-    });
+    if (userManager.constructor.name === 'SupabaseUserManager') {
+      // Supabase stock query logging
+      const { data, error } = await userManager.supabase
+        .from('user_queries')
+        .insert([{
+          username: username,
+          type: 'stock',
+          content: query,
+          result: result,
+          metadata: metadata,
+          created_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
 
-    res.json({ 
-      success: true, 
-      queryId,
-      message: 'Stock query logged successfully' 
-    });
+      if (error) throw error;
+
+      res.json({ 
+        success: true, 
+        queryId: data.id,
+        message: 'Stock query logged successfully' 
+      });
+    } else {
+      // SQLite/PostgreSQL stock query logging
+      const db = userManager.db;
+      const insertSQL = `
+        INSERT INTO user_queries (username, type, content, result, metadata) 
+        VALUES (?, 'stock', ?, ?, ?)
+      `;
+
+      const queryId = await new Promise((resolve, reject) => {
+        db.run(insertSQL, [username, query, result, JSON.stringify(metadata)], function(err) {
+          if (err) reject(err);
+          else resolve(this.lastID);
+        });
+      });
+
+      res.json({ 
+        success: true, 
+        queryId,
+        message: 'Stock query logged successfully' 
+      });
+    }
   } catch (error) {
     console.error('Log stock query error:', error);
     res.status(500).json({ error: 'Failed to log stock query' });
@@ -2354,30 +2545,55 @@ app.post('/api/log-ai-query', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'Question and answer are required' });
     }
 
-    const db = userManager.db;
-    const insertSQL = `
-      INSERT INTO user_queries (username, type, content, result, metadata) 
-      VALUES (?, 'ai', ?, ?, ?)
-    `;
-
     const metadata = {
       model: model || 'GPT-4',
       category: category || 'general',
       timestamp: new Date().toISOString()
     };
 
-    const queryId = await new Promise((resolve, reject) => {
-      db.run(insertSQL, [username, question, answer, JSON.stringify(metadata)], function(err) {
-        if (err) reject(err);
-        else resolve(this.lastID);
-      });
-    });
+    if (userManager.constructor.name === 'SupabaseUserManager') {
+      // Supabase AI query logging
+      const { data, error } = await userManager.supabase
+        .from('user_queries')
+        .insert([{
+          username: username,
+          type: 'ai',
+          content: question,
+          result: answer,
+          metadata: metadata,
+          created_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
 
-    res.json({ 
-      success: true, 
-      queryId,
-      message: 'AI query logged successfully' 
-    });
+      if (error) throw error;
+
+      res.json({ 
+        success: true, 
+        queryId: data.id,
+        message: 'AI query logged successfully' 
+      });
+    } else {
+      // SQLite/PostgreSQL AI query logging
+      const db = userManager.db;
+      const insertSQL = `
+        INSERT INTO user_queries (username, type, content, result, metadata) 
+        VALUES (?, 'ai', ?, ?, ?)
+      `;
+
+      const queryId = await new Promise((resolve, reject) => {
+        db.run(insertSQL, [username, question, answer, JSON.stringify(metadata)], function(err) {
+          if (err) reject(err);
+          else resolve(this.lastID);
+        });
+      });
+
+      res.json({ 
+        success: true, 
+        queryId,
+        message: 'AI query logged successfully' 
+      });
+    }
   } catch (error) {
     console.error('Log AI query error:', error);
     res.status(500).json({ error: 'Failed to log AI query' });
