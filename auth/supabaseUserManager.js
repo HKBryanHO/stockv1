@@ -1,7 +1,17 @@
-const { createClient } = require('@supabase/supabase-js');
+let createClient;
+try {
+  const supabase = require('@supabase/supabase-js');
+  createClient = supabase.createClient;
+} catch (error) {
+  console.warn('Supabase client not available:', error.message);
+  createClient = null;
+}
 
 class SupabaseUserManager {
   constructor() {
+    if (!createClient) {
+      throw new Error('Supabase client not available. Please install @supabase/supabase-js package.');
+    }
     this.supabase = createClient(
       process.env.SUPABASE_URL || 'https://ghtqyibmlltkpmcuuanj.supabase.co',
       process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdodHF5aWJtbGx0a3BtY3V1YW5qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkxMTQ2MDQsImV4cCI6MjA3NDY5MDYwNH0.zqbr8jaE4ENVumrErp4q8oc__LPx4MlW25Cl1vCiwOM'
@@ -19,7 +29,13 @@ class SupabaseUserManager {
       if (error || !user) return null;
 
       // Verify password using bcrypt
-      const bcrypt = require('bcrypt');
+      let bcrypt;
+      try {
+        bcrypt = require('bcrypt');
+      } catch (error) {
+        console.error('bcrypt not available:', error.message);
+        return null;
+      }
       const isValidPassword = await bcrypt.compare(password, user.password_hash);
       
       if (!isValidPassword) {
@@ -44,7 +60,13 @@ class SupabaseUserManager {
   async createUser(userData) {
     try {
       // Hash the password
-      const bcrypt = require('bcrypt');
+      let bcrypt;
+      try {
+        bcrypt = require('bcrypt');
+      } catch (error) {
+        console.error('bcrypt not available:', error.message);
+        throw new Error('bcrypt package not available');
+      }
       const hashedPassword = await bcrypt.hash(userData.password, 10);
       
       const { data, error } = await this.supabase
