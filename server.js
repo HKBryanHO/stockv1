@@ -770,6 +770,153 @@ app.get('/api/debug/env', (req, res) => {
   });
 });
 
+// Test data source connectivity
+app.get('/api/backtest/sources', async (req, res) => {
+  const testSymbol = 'AAPL';
+  const sources = [];
+  
+  // Test FMP
+  if (FMP_KEY) {
+    try {
+      const fmpUrl = `https://financialmodelingprep.com/api/v3/historical-price-full/${testSymbol}?apikey=${FMP_KEY}&limit=5`;
+      const start = Date.now();
+      const { body } = await fetchJson(fmpUrl);
+      const data = JSON.parse(body);
+      const responseTime = Date.now() - start;
+      
+      sources.push({
+        name: 'Financial Modeling Prep',
+        status: data && data.historical ? 'working' : 'error',
+        responseTime: responseTime,
+        dataAvailable: data && data.historical ? data.historical.length : 0,
+        priority: 1
+      });
+    } catch (error) {
+      sources.push({
+        name: 'Financial Modeling Prep',
+        status: 'error',
+        error: error.message,
+        priority: 1
+      });
+    }
+  } else {
+    sources.push({
+      name: 'Financial Modeling Prep',
+      status: 'not_configured',
+      priority: 1
+    });
+  }
+  
+  // Test Finnhub
+  if (FINNHUB_KEY) {
+    try {
+      const finnhubUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${testSymbol}&resolution=D&count=5&token=${FINNHUB_KEY}`;
+      const start = Date.now();
+      const { body } = await fetchJson(finnhubUrl);
+      const data = JSON.parse(body);
+      const responseTime = Date.now() - start;
+      
+      sources.push({
+        name: 'Finnhub',
+        status: data && data.s === 'ok' ? 'working' : 'error',
+        responseTime: responseTime,
+        dataAvailable: data && data.c ? data.c.length : 0,
+        priority: 2
+      });
+    } catch (error) {
+      sources.push({
+        name: 'Finnhub',
+        status: 'error',
+        error: error.message,
+        priority: 2
+      });
+    }
+  } else {
+    sources.push({
+      name: 'Finnhub',
+      status: 'not_configured',
+      priority: 2
+    });
+  }
+  
+  // Test Polygon.io
+  if (POLYGON_KEY) {
+    try {
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(endDate.getDate() - 10);
+      
+      const polygonUrl = `https://api.polygon.io/v2/aggs/ticker/${testSymbol}/range/1/day/${startDate.toISOString().split('T')[0]}/${endDate.toISOString().split('T')[0]}?adjusted=true&sort=asc&apikey=${POLYGON_KEY}`;
+      const start = Date.now();
+      const { body } = await fetchJson(polygonUrl);
+      const data = JSON.parse(body);
+      const responseTime = Date.now() - start;
+      
+      sources.push({
+        name: 'Polygon.io',
+        status: data && data.results ? 'working' : 'error',
+        responseTime: responseTime,
+        dataAvailable: data && data.results ? data.results.length : 0,
+        priority: 3
+      });
+    } catch (error) {
+      sources.push({
+        name: 'Polygon.io',
+        status: 'error',
+        error: error.message,
+        priority: 3
+      });
+    }
+  } else {
+    sources.push({
+      name: 'Polygon.io',
+      status: 'not_configured',
+      priority: 3
+    });
+  }
+  
+  // Test Alpha Vantage
+  if (ALPHA_KEY) {
+    try {
+      const alphaUrl = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${testSymbol}&outputsize=compact&apikey=${ALPHA_KEY}`;
+      const start = Date.now();
+      const { body } = await fetchAlphaJson(alphaUrl);
+      const data = JSON.parse(body);
+      const responseTime = Date.now() - start;
+      
+      sources.push({
+        name: 'Alpha Vantage',
+        status: data && data['Time Series (Daily)'] ? 'working' : 'error',
+        responseTime: responseTime,
+        dataAvailable: data && data['Time Series (Daily)'] ? Object.keys(data['Time Series (Daily)']).length : 0,
+        priority: 4
+      });
+    } catch (error) {
+      sources.push({
+        name: 'Alpha Vantage',
+        status: 'error',
+        error: error.message,
+        priority: 4
+      });
+    }
+  } else {
+    sources.push({
+      name: 'Alpha Vantage',
+      status: 'not_configured',
+      priority: 4
+    });
+  }
+  
+  // Sort by priority
+  sources.sort((a, b) => a.priority - b.priority);
+  
+  res.json({
+    sources: sources,
+    recommendation: sources.find(s => s.status === 'working')?.name || 'No working data sources',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // New API endpoints for enhanced data sources
 app.get('/api/finnhub/quote', async (req, res) => {
   try {
@@ -1710,6 +1857,403 @@ app.post('/api/sim/garch', (req, res) => {
   const { closes = [], days = 21 } = req.body || {};
   res.json(computeBandsFromCloses(closes, days, 0.9));
 });
+
+// Backtest API endpoints
+app.post('/api/backtest/run', authRequired, async (req, res) => {
+  try {
+    const { symbol, period, lookbackDays = 90, models = ['lstm', 'gbm', 'arima', 'prophet'] } = req.body;
+    
+    if (!symbol || !period) {
+      return res.status(400).json({ error: 'Symbol and period are required' });
+    }
+
+    // Fetch historical data for backtesting using multiple data sources
+    const fetchHistoricalData = async (symbol, days) => {
+      console.log(`Fetching historical data for ${symbol} (${days} days)`);
+      
+      // Try FMP first (most reliable for historical data)
+      if (FMP_KEY) {
+        try {
+          console.log('Trying FMP API...');
+          const fmpUrl = `https://financialmodelingprep.com/api/v3/historical-price-full/${encodeURIComponent(symbol)}?apikey=${FMP_KEY}`;
+          const { body } = await fetchJson(fmpUrl);
+          const data = JSON.parse(body);
+          
+          if (data && data.historical && Array.isArray(data.historical)) {
+            const historical = data.historical.slice(0, days).reverse(); // FMP returns newest first
+            const dates = historical.map(item => item.date);
+            const closes = historical.map(item => parseFloat(item.close));
+            const volumes = historical.map(item => parseFloat(item.volume));
+            
+            console.log(`✓ FMP: Retrieved ${closes.length} days of data`);
+            return { dates, closes, volumes };
+          }
+        } catch (error) {
+          console.warn('FMP API failed:', error.message);
+        }
+      }
+      
+      // Try Finnhub as second option
+      if (FINNHUB_KEY) {
+        try {
+          console.log('Trying Finnhub API...');
+          const finnhubUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=D&count=${days}&token=${FINNHUB_KEY}`;
+          const { body } = await fetchJson(finnhubUrl);
+          const data = JSON.parse(body);
+          
+          if (data && data.s && data.s === 'ok' && data.c && data.c.length > 0) {
+            const closes = data.c.map(price => parseFloat(price));
+            const volumes = data.v ? data.v.map(vol => parseFloat(vol)) : [];
+            const dates = data.t.map(timestamp => new Date(timestamp * 1000).toISOString().split('T')[0]);
+            
+            console.log(`✓ Finnhub: Retrieved ${closes.length} days of data`);
+            return { dates, closes, volumes };
+          }
+        } catch (error) {
+          console.warn('Finnhub API failed:', error.message);
+        }
+      }
+      
+      // Try Polygon.io as third option
+      if (POLYGON_KEY) {
+        try {
+          console.log('Trying Polygon.io API...');
+          const endDate = new Date();
+          const startDate = new Date();
+          startDate.setDate(endDate.getDate() - days * 2); // Get extra data to ensure we have enough
+          
+          const polygonUrl = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/day/${startDate.toISOString().split('T')[0]}/${endDate.toISOString().split('T')[0]}?adjusted=true&sort=asc&apikey=${POLYGON_KEY}`;
+          const { body } = await fetchJson(polygonUrl);
+          const data = JSON.parse(body);
+          
+          if (data && data.results && Array.isArray(data.results)) {
+            const results = data.results.slice(-days); // Get last N days
+            const dates = results.map(item => new Date(item.t).toISOString().split('T')[0]);
+            const closes = results.map(item => parseFloat(item.c));
+            const volumes = results.map(item => parseFloat(item.v));
+            
+            console.log(`✓ Polygon.io: Retrieved ${closes.length} days of data`);
+            return { dates, closes, volumes };
+          }
+        } catch (error) {
+          console.warn('Polygon.io API failed:', error.message);
+        }
+      }
+      
+      // Fallback to Alpha Vantage
+      try {
+        console.log('Falling back to Alpha Vantage...');
+        const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&outputsize=full&apikey=${ALPHA_KEY}`;
+        const { body } = await fetchAlphaJson(url);
+        const data = JSON.parse(body);
+        const timeSeries = data['Time Series (Daily)'];
+        
+        if (!timeSeries) {
+          throw new Error('No historical data available from Alpha Vantage');
+        }
+        
+        const dates = Object.keys(timeSeries).sort();
+        const closes = dates.map(date => parseFloat(timeSeries[date]['4. close']));
+        const volumes = dates.map(date => parseFloat(timeSeries[date]['5. volume']));
+        
+        // Return only the requested number of days
+        const startIndex = Math.max(0, closes.length - days);
+        console.log(`✓ Alpha Vantage: Retrieved ${closes.slice(startIndex).length} days of data`);
+        return {
+          dates: dates.slice(startIndex),
+          closes: closes.slice(startIndex),
+          volumes: volumes.slice(startIndex)
+        };
+      } catch (error) {
+        console.error('All data sources failed:', error);
+        throw new Error('Unable to fetch historical data from any source. Please check your API keys and symbol format.');
+      }
+    };
+
+    const historicalData = await fetchHistoricalData(symbol, lookbackDays + period);
+    
+    if (historicalData.closes.length < lookbackDays + period) {
+      return res.status(400).json({ 
+        error: 'Insufficient historical data for backtesting',
+        available: historicalData.closes.length,
+        required: lookbackDays + period
+      });
+    }
+
+    // Perform backtest simulation
+    const backtestResults = {
+      symbol,
+      period,
+      lookbackDays,
+      startDate: historicalData.dates[historicalData.dates.length - lookbackDays],
+      endDate: historicalData.dates[historicalData.dates.length - 1],
+      models: {},
+      summary: {
+        totalTrades: 0,
+        winningTrades: 0,
+        losingTrades: 0,
+        totalReturn: 0,
+        maxDrawdown: 0,
+        sharpeRatio: 0,
+        winRate: 0
+      }
+    };
+
+    // Simulate predictions for each model
+    for (const modelName of models) {
+      const modelResults = {
+        predictions: [],
+        actuals: [],
+        trades: [],
+        metrics: {
+          mae: 0,
+          rmse: 0,
+          accuracy: 0,
+          winRate: 0,
+          totalReturn: 0,
+          sharpeRatio: 0,
+          maxDrawdown: 0
+        }
+      };
+
+      // Walk-forward backtest
+      for (let i = 0; i < lookbackDays; i++) {
+        const trainData = historicalData.closes.slice(0, historicalData.closes.length - lookbackDays + i);
+        const actualPrice = historicalData.closes[historicalData.closes.length - lookbackDays + i + period - 1];
+        
+        if (trainData.length < 30 || !actualPrice) continue;
+
+        // Generate prediction based on model type
+        let prediction;
+        try {
+          switch (modelName) {
+            case 'gbm':
+              prediction = predictGBM(trainData, period);
+              break;
+            case 'arima':
+              prediction = predictARIMA(trainData, period);
+              break;
+            case 'lstm':
+              // Simplified LSTM prediction (would need TensorFlow.js on server)
+              prediction = predictSimpleLSTM(trainData, period);
+              break;
+            case 'prophet':
+              // Simplified Prophet prediction
+              prediction = predictSimpleProphet(trainData, period);
+              break;
+            default:
+              prediction = trainData[trainData.length - 1] * (1 + Math.random() * 0.1 - 0.05);
+          }
+        } catch (error) {
+          console.warn(`Prediction failed for ${modelName} at step ${i}:`, error.message);
+          continue;
+        }
+
+        const actual = actualPrice;
+        const predictionError = Math.abs(prediction - actual) / actual;
+        const directionCorrect = (prediction > trainData[trainData.length - 1]) === (actual > trainData[trainData.length - 1]);
+        
+        modelResults.predictions.push(prediction);
+        modelResults.actuals.push(actual);
+        
+        // Calculate trade performance
+        const entryPrice = trainData[trainData.length - 1];
+        const tradeReturn = (actual - entryPrice) / entryPrice;
+        const trade = {
+          date: historicalData.dates[historicalData.dates.length - lookbackDays + i],
+          entryPrice,
+          prediction,
+          actual,
+          return: tradeReturn,
+          directionCorrect,
+          error: predictionError
+        };
+        modelResults.trades.push(trade);
+      }
+
+      // Calculate model metrics
+      if (modelResults.trades.length > 0) {
+        const returns = modelResults.trades.map(t => t.return);
+        const correctDirections = modelResults.trades.filter(t => t.directionCorrect);
+        const errors = modelResults.trades.map(t => t.error);
+        
+        modelResults.metrics.winRate = correctDirections.length / modelResults.trades.length;
+        modelResults.metrics.totalReturn = returns.reduce((sum, r) => sum + r, 0);
+        modelResults.metrics.mae = errors.reduce((sum, e) => sum + e, 0) / errors.length;
+        modelResults.metrics.rmse = Math.sqrt(errors.reduce((sum, e) => sum + e * e, 0) / errors.length);
+        
+        // Calculate Sharpe ratio (simplified)
+        const avgReturn = modelResults.metrics.totalReturn / returns.length;
+        const returnStd = Math.sqrt(returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length);
+        modelResults.metrics.sharpeRatio = returnStd > 0 ? avgReturn / returnStd : 0;
+        
+        // Calculate max drawdown
+        let peak = 0;
+        let maxDD = 0;
+        let cumulativeReturn = 0;
+        for (const ret of returns) {
+          cumulativeReturn += ret;
+          if (cumulativeReturn > peak) peak = cumulativeReturn;
+          const drawdown = peak - cumulativeReturn;
+          if (drawdown > maxDD) maxDD = drawdown;
+        }
+        modelResults.metrics.maxDrawdown = maxDD;
+      }
+
+      backtestResults.models[modelName] = modelResults;
+    }
+
+    // Calculate overall summary
+    const allTrades = Object.values(backtestResults.models).flatMap(m => m.trades);
+    if (allTrades.length > 0) {
+      backtestResults.summary.totalTrades = allTrades.length;
+      backtestResults.summary.winningTrades = allTrades.filter(t => t.return > 0).length;
+      backtestResults.summary.losingTrades = allTrades.filter(t => t.return < 0).length;
+      backtestResults.summary.winRate = backtestResults.summary.winningTrades / backtestResults.summary.totalTrades;
+      backtestResults.summary.totalReturn = allTrades.reduce((sum, t) => sum + t.return, 0);
+      
+      const returns = allTrades.map(t => t.return);
+      const avgReturn = backtestResults.summary.totalReturn / returns.length;
+      const returnStd = Math.sqrt(returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length);
+      backtestResults.summary.sharpeRatio = returnStd > 0 ? avgReturn / returnStd : 0;
+    }
+
+    res.json(backtestResults);
+  } catch (error) {
+    console.error('Backtest error:', error);
+    res.status(500).json({ error: 'Backtest failed: ' + error.message });
+  }
+});
+
+// Enhanced prediction functions with better statistical models
+function predictGBM(closes, days) {
+  if (closes.length < 2) return closes[closes.length - 1];
+  
+  // Calculate log returns
+  const logReturns = [];
+  for (let i = 1; i < closes.length; i++) {
+    logReturns.push(Math.log(closes[i] / closes[i-1]));
+  }
+  
+  // Calculate drift and volatility
+  const mean = logReturns.reduce((sum, r) => sum + r, 0) / logReturns.length;
+  const variance = logReturns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (logReturns.length - 1);
+  const volatility = Math.sqrt(variance);
+  
+  // GBM formula: S_t = S_0 * exp((μ - σ²/2) * t + σ * √t * Z)
+  const drift = mean - (variance / 2);
+  const lastPrice = closes[closes.length - 1];
+  
+  // Use multiple scenarios for better prediction
+  const scenarios = [];
+  for (let i = 0; i < 100; i++) {
+    const z = (Math.random() + Math.random() + Math.random() + Math.random() - 2) / Math.sqrt(2); // Box-Muller approximation
+    const price = lastPrice * Math.exp(drift * days + volatility * Math.sqrt(days) * z);
+    scenarios.push(price);
+  }
+  
+  // Return median of scenarios
+  scenarios.sort((a, b) => a - b);
+  return scenarios[Math.floor(scenarios.length / 2)];
+}
+
+function predictARIMA(closes, days) {
+  if (closes.length < 10) return closes[closes.length - 1];
+  
+  // Simple ARIMA(1,1,1) approximation
+  const returns = [];
+  for (let i = 1; i < closes.length; i++) {
+    returns.push(closes[i] - closes[i-1]);
+  }
+  
+  // Calculate autoregressive coefficient (simplified)
+  let arCoeff = 0;
+  if (returns.length > 1) {
+    let numerator = 0, denominator = 0;
+    for (let i = 1; i < returns.length; i++) {
+      numerator += returns[i] * returns[i-1];
+      denominator += returns[i-1] * returns[i-1];
+    }
+    arCoeff = denominator > 0 ? numerator / denominator : 0;
+    arCoeff = Math.max(-0.9, Math.min(0.9, arCoeff)); // Constrain AR coefficient
+  }
+  
+  // Forecast
+  let forecast = returns[returns.length - 1];
+  for (let i = 0; i < days; i++) {
+    forecast = arCoeff * forecast;
+  }
+  
+  return closes[closes.length - 1] + forecast;
+}
+
+function predictSimpleLSTM(closes, days) {
+  if (closes.length < 20) return closes[closes.length - 1];
+  
+  // Enhanced LSTM-like prediction using multiple moving averages and momentum
+  const shortMA = closes.slice(-5).reduce((sum, p) => sum + p, 0) / 5;
+  const mediumMA = closes.slice(-10).reduce((sum, p) => sum + p, 0) / 10;
+  const longMA = closes.slice(-20).reduce((sum, p) => sum + p, 0) / 20;
+  
+  // Calculate momentum indicators
+  const momentum = (shortMA - longMA) / longMA;
+  const acceleration = (shortMA - mediumMA) / mediumMA;
+  
+  // Volatility adjustment
+  const volatility = calculateVolatility(closes.slice(-20));
+  const volatilityFactor = Math.min(2, Math.max(0.1, volatility / 0.02)); // Normalize volatility
+  
+  // Combine signals with weights
+  const trendSignal = momentum * 0.6 + acceleration * 0.4;
+  const adjustedSignal = trendSignal / volatilityFactor;
+  
+  // Apply sigmoid-like activation
+  const activation = Math.tanh(adjustedSignal * 2);
+  
+  return closes[closes.length - 1] * (1 + activation * days * 0.05);
+}
+
+function predictSimpleProphet(closes, days) {
+  if (closes.length < 30) return closes[closes.length - 1];
+  
+  // Prophet-like prediction with trend and seasonality
+  const n = closes.length;
+  const trend = (closes[n-1] - closes[0]) / n;
+  
+  // Simple seasonality detection (weekly pattern)
+  const weeklyReturns = [];
+  for (let i = 7; i < n; i += 7) {
+    if (i < n) weeklyReturns.push(closes[i] - closes[i-7]);
+  }
+  
+  const seasonalComponent = weeklyReturns.length > 0 ? 
+    weeklyReturns.reduce((sum, r) => sum + r, 0) / weeklyReturns.length : 0;
+  
+  // Volatility component
+  const volatility = calculateVolatility(closes.slice(-20));
+  
+  // Combine components
+  const trendComponent = trend * days;
+  const seasonalComponent_adj = seasonalComponent * Math.floor(days / 7);
+  const noiseComponent = (Math.random() - 0.5) * volatility * Math.sqrt(days);
+  
+  return closes[closes.length - 1] + trendComponent + seasonalComponent_adj + noiseComponent;
+}
+
+// Helper function to calculate volatility
+function calculateVolatility(prices) {
+  if (prices.length < 2) return 0;
+  
+  const returns = [];
+  for (let i = 1; i < prices.length; i++) {
+    returns.push(Math.log(prices[i] / prices[i-1]));
+  }
+  
+  const mean = returns.reduce((sum, r) => sum + r, 0) / returns.length;
+  const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (returns.length - 1);
+  
+  return Math.sqrt(variance);
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {

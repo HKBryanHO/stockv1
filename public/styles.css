@@ -46,6 +46,131 @@ input, select, textarea {
     background: #6b7280 !important;
 }
 
+/* Button group styles */
+.button-group {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.button-group .btn {
+    flex: 1;
+    min-width: 200px;
+}
+
+/* Backtest panel styles */
+#advancedBacktestPanel {
+    margin-top: 20px;
+    background: #0b1220 !important;
+    border: 1px solid #1f2937 !important;
+    border-radius: 10px !important;
+}
+
+#advancedBacktestPanel .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #1f2937;
+    background: #111827;
+    border-radius: 10px 10px 0 0;
+}
+
+#advancedBacktestPanel .panel-content {
+    padding: 20px;
+}
+
+/* KPI Grid for backtest summary */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.kpi-item {
+    background: #0a0e1a;
+    border: 1px solid #1f2937;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+}
+
+.kpi-label {
+    font-size: 12px;
+    color: #9ca3af;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.kpi-value {
+    font-size: 20px;
+    font-weight: bold;
+    color: #e5e7eb;
+}
+
+.kpi-value.positive {
+    color: #10b981;
+}
+
+.kpi-value.negative {
+    color: #ef4444;
+}
+
+/* Chart containers */
+.chart-container {
+    margin: 20px 0;
+    background: #0a0e1a;
+    border: 1px solid #1f2937;
+    border-radius: 8px;
+    padding: 16px;
+}
+
+/* Table styles for backtest */
+.table-responsive {
+    overflow-x: auto;
+    margin: 16px 0;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #0a0e1a;
+    border: 1px solid #1f2937;
+    border-radius: 8px;
+}
+
+.table th,
+.table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #1f2937;
+}
+
+.table th {
+    background: #111827;
+    font-weight: 600;
+    color: #e5e7eb;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+}
+
+.table td {
+    color: #d1d5db;
+}
+
+.table tbody tr:hover {
+    background: #111827;
+}
+
+.table-sm th,
+.table-sm td {
+    padding: 8px 12px;
+    font-size: 14px;
+}
+
 /* 確保模態框有背景 */
 .modal-content {
     background: #0b1220 !important;
