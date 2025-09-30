@@ -1259,6 +1259,7 @@ class StockPredictionApp {
             
             const response = await fetch('/api/log-stock-query', {
                 method: 'POST',
+                credentials: 'include',  // 包含cookies以進行認證
                 headers: {
                     'Content-Type': 'application/json',
                 },
@@ -1286,6 +1287,7 @@ class StockPredictionApp {
         try {
             const response = await fetch('/api/log-ai-query', {
                 method: 'POST',
+                credentials: 'include',  // 包含cookies以進行認證
                 headers: {
                     'Content-Type': 'application/json',
                 },
@@ -1311,6 +1313,7 @@ class StockPredictionApp {
         try {
             const response = await fetch('/api/log-query', {
                 method: 'POST',
+                credentials: 'include',  // 包含cookies以進行認證
                 headers: {
                     'Content-Type': 'application/json',
                 },
