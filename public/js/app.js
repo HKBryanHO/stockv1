@@ -2522,8 +2522,48 @@ class StockPredictionApp {
         const now = Date.now();
         // Cache hit
         try { const db = await this.dbPromise; if (db) { const c = await db.get('historical', key); if (c && (now - (c.ts||0) < 3600*1000)) return c.data; } } catch (_) {}
+        
         const fetchOnce = async () => {
-            // 1) Backend proxy
+            // 1) Try professional financial data sources first
+            try {
+                const days = range === '3mo' ? 90 : range === '6mo' ? 180 : range === '1y' ? 365 : 730;
+                const url = `${this.backendBase}/historical-data`;
+                console.log(`Fetching professional financial data from: ${url}`);
+                
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        symbol: symbol,
+                        days: days
+                    })
+                });
+                
+                if (resp.ok) {
+                    const result = await resp.json();
+                    if (result.success && result.data && result.data.length > 0) {
+                        console.log(`✓ ${result.source}: Retrieved ${result.data.length} days of data`);
+                        
+                        // Convert to the format expected by the frontend
+                        const dates = result.data.map(item => item.date);
+                        const closes = result.data.map(item => parseFloat(item.close));
+                        const volumes = result.data.map(item => parseFloat(item.volume) || 1000000);
+                        const opens = result.data.map(item => parseFloat(item.open));
+                        const highs = result.data.map(item => parseFloat(item.high));
+                        const lows = result.data.map(item => parseFloat(item.low));
+                        
+                        return { dates, closes, volumes, opens, highs, lows };
+                    }
+                }
+                console.warn(`Professional data source HTTP ${resp.status}`);
+            } catch (e) {
+                console.warn('Professional data source failed, trying Yahoo Finance:', e?.message || e);
+            }
+
+            // 2) Fallback to Yahoo Finance (original logic)
             try {
                 const url = `${this.backendBase}/api/yahoo/chart?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}&interval=1d`;
                 console.log(`Fetching Yahoo chart data from: ${url}`);
@@ -2561,7 +2601,7 @@ class StockPredictionApp {
                 console.warn('Backend chart fetch failed, will try direct proxy:', e?.message || e);
             }
 
-            // 2) Direct Yahoo via CORS proxy
+            // 3) Direct Yahoo via CORS proxy (last resort)
             const chartPath = `finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${encodeURIComponent(range)}&interval=1d&events=history&includeAdjustedClose=true`;
             const urls = [
                 `https://r.jina.ai/https://query1.${chartPath}`,
@@ -2609,10 +2649,11 @@ class StockPredictionApp {
             }
             throw lastErr || new Error('chart_fetch_failed');
         };
+        
         let out;
         try { out = await this.withBackoff(fetchOnce, 3); }
         catch (e) {
-            throw new Error('Unable to fetch data from Yahoo Finance');
+            throw new Error('Unable to fetch data from any source');
         }
         try { const db = await this.dbPromise; if (db) await db.put('historical', { ts: now, data: out }, key); } catch (_) {}
         return out;
