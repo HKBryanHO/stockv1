@@ -1253,6 +1253,47 @@ class StockPredictionApp {
         }
     }
 
+    async runAdvancedBacktest(symbol, period, lookbackDays = 90) {
+        try {
+            this.showLoading(true);
+            this.showToast('正在運行高級回測分析...', 'info', 3000);
+
+            const response = await fetch('/api/backtest/run', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    symbol: symbol,
+                    period: period,
+                    lookbackDays: lookbackDays,
+                    models: ['lstm', 'gbm', 'arima', 'prophet']
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const backtestResults = await response.json();
+            
+            // Store backtest results for display
+            this.backtestResults = backtestResults;
+            
+            // Render backtest results
+            this.renderAdvancedBacktestResults(backtestResults);
+            
+            this.showToast('回測分析完成！', 'success', 2000);
+            return backtestResults;
+        } catch (error) {
+            console.error('Advanced backtest error:', error);
+            this.showToast(`回測失敗: ${error.message}`, 'error', 5000);
+            return null;
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
     async runBacktestAnalysis() {
         try {
             const formData = this.getFormData();
@@ -3229,46 +3270,6 @@ class QuantitativeCalculator {
         }
     }
 
-    async runAdvancedBacktest(symbol, period, lookbackDays = 90) {
-        try {
-            this.showLoading(true);
-            this.showToast('正在運行高級回測分析...', 'info', 3000);
-
-            const response = await fetch('/api/backtest/run', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    symbol: symbol,
-                    period: period,
-                    lookbackDays: lookbackDays,
-                    models: ['lstm', 'gbm', 'arima', 'prophet']
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const backtestResults = await response.json();
-            
-            // Store backtest results for display
-            this.backtestResults = backtestResults;
-            
-            // Render backtest results
-            this.renderAdvancedBacktestResults(backtestResults);
-            
-            this.showToast('回測分析完成！', 'success', 2000);
-            return backtestResults;
-        } catch (error) {
-            console.error('Advanced backtest error:', error);
-            this.showToast(`回測失敗: ${error.message}`, 'error', 5000);
-            return null;
-        } finally {
-            this.showLoading(false);
-        }
-    }
 
     renderAdvancedBacktestResults(results) {
         // Create or update backtest results panel
