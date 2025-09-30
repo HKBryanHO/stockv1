@@ -1253,6 +1253,307 @@ class StockPredictionApp {
         }
     }
 
+    renderAdvancedBacktestResults(results) {
+        // Create or update backtest results panel
+        let panel = document.getElementById('advancedBacktestPanel');
+        if (!panel) {
+            panel = document.createElement('div');
+            panel.id = 'advancedBacktestPanel';
+            panel.className = 'panel';
+            panel.innerHTML = `
+                <div class="panel-header">
+                    <h3>📊 高級回測分析結果</h3>
+                    <button class="btn btn-sm" onclick="document.getElementById('advancedBacktestPanel').style.display='none'">×</button>
+                </div>
+                <div class="panel-content">
+                    <div id="backtestSummary"></div>
+                    <div id="backtestCharts"></div>
+                    <div id="backtestTable"></div>
+                    <div id="backtestTrades"></div>
+                </div>
+            `;
+            
+            // Insert after the main results panel
+            const mainPanel = document.querySelector('.panel');
+            if (mainPanel) {
+                mainPanel.parentNode.insertBefore(panel, mainPanel.nextSibling);
+            }
+        }
+
+        // Render summary metrics
+        this.renderBacktestSummary(results);
+        
+        // Render performance charts
+        this.renderBacktestCharts(results);
+        
+        // Render detailed table
+        this.renderBacktestTable(results);
+        
+        // Render trades details
+        this.renderBacktestTrades(results);
+        
+        panel.style.display = 'block';
+    }
+
+    renderBacktestSummary(results) {
+        const summaryEl = document.getElementById('backtestSummary');
+        if (!summaryEl) return;
+
+        const summary = results.summary;
+        summaryEl.innerHTML = `
+            <div class="kpi-grid">
+                <div class="kpi-item">
+                    <div class="kpi-label">總交易次數</div>
+                    <div class="kpi-value">${summary.totalTrades}</div>
+                </div>
+                <div class="kpi-item">
+                    <div class="kpi-label">勝率</div>
+                    <div class="kpi-value ${summary.winRate > 0.5 ? 'positive' : 'negative'}">${(summary.winRate * 100).toFixed(1)}%</div>
+                </div>
+                <div class="kpi-item">
+                    <div class="kpi-label">總回報</div>
+                    <div class="kpi-value ${summary.totalReturn > 0 ? 'positive' : 'negative'}">${(summary.totalReturn * 100).toFixed(2)}%</div>
+                </div>
+                <div class="kpi-item">
+                    <div class="kpi-label">夏普比率</div>
+                    <div class="kpi-value">${summary.sharpeRatio.toFixed(3)}</div>
+                </div>
+                <div class="kpi-item">
+                    <div class="kpi-label">最大回撤</div>
+                    <div class="kpi-value negative">${(summary.maxDrawdown * 100).toFixed(2)}%</div>
+                </div>
+                <div class="kpi-item">
+                    <div class="kpi-label">測試期間</div>
+                    <div class="kpi-value">${results.startDate} 至 ${results.endDate}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    renderBacktestCharts(results) {
+        const chartsEl = document.getElementById('backtestCharts');
+        if (!chartsEl) return;
+
+        chartsEl.innerHTML = `
+            <div class="chart-container">
+                <canvas id="backtestPerformanceChart" width="400" height="200"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="backtestAccuracyChart" width="400" height="200"></canvas>
+            </div>
+        `;
+
+        // Performance comparison chart
+        this.renderBacktestPerformanceChart(results);
+        
+        // Accuracy comparison chart
+        this.renderBacktestAccuracyChart(results);
+    }
+
+    renderBacktestPerformanceChart(results) {
+        const ctx = document.getElementById('backtestPerformanceChart');
+        if (!ctx) return;
+
+        const modelNames = Object.keys(results.models);
+        const winRates = modelNames.map(name => results.models[name].metrics.winRate * 100);
+        const totalReturns = modelNames.map(name => results.models[name].metrics.totalReturn * 100);
+        const sharpeRatios = modelNames.map(name => results.models[name].metrics.sharpeRatio);
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: modelNames.map(name => name.toUpperCase()),
+                datasets: [
+                    {
+                        label: '勝率 (%)',
+                        data: winRates,
+                        backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: '總回報 (%)',
+                        data: totalReturns,
+                        backgroundColor: 'rgba(255, 99, 132, 0.8)',
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '模型性能比較'
+                    }
+                },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: {
+                            display: true,
+                            text: '勝率 (%)'
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: '總回報 (%)'
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    }
+                }
+            }
+        });
+    }
+
+    renderBacktestAccuracyChart(results) {
+        const ctx = document.getElementById('backtestAccuracyChart');
+        if (!ctx) return;
+
+        const modelNames = Object.keys(results.models);
+        const maeValues = modelNames.map(name => results.models[name].metrics.mae);
+        const rmseValues = modelNames.map(name => results.models[name].metrics.rmse);
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: modelNames.map(name => name.toUpperCase()),
+                datasets: [
+                    {
+                        label: 'MAE',
+                        data: maeValues,
+                        backgroundColor: 'rgba(75, 192, 192, 0.8)'
+                    },
+                    {
+                        label: 'RMSE',
+                        data: rmseValues,
+                        backgroundColor: 'rgba(255, 205, 86, 0.8)'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '預測準確度比較 (越低越好)'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: '誤差值'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    renderBacktestTable(results) {
+        const tableEl = document.getElementById('backtestTable');
+        if (!tableEl) return;
+
+        const modelNames = Object.keys(results.models);
+        const rows = modelNames.map(name => {
+            const metrics = results.models[name].metrics;
+            return `
+                <tr>
+                    <td><strong>${name.toUpperCase()}</strong></td>
+                    <td>${(metrics.winRate * 100).toFixed(1)}%</td>
+                    <td class="${metrics.totalReturn > 0 ? 'positive' : 'negative'}">${(metrics.totalReturn * 100).toFixed(2)}%</td>
+                    <td>${metrics.sharpeRatio.toFixed(3)}</td>
+                    <td class="negative">${(metrics.maxDrawdown * 100).toFixed(2)}%</td>
+                    <td>${metrics.mae.toFixed(4)}</td>
+                    <td>${metrics.rmse.toFixed(4)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        tableEl.innerHTML = `
+            <h4>模型詳細指標</h4>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>模型</th>
+                            <th>勝率</th>
+                            <th>總回報</th>
+                            <th>夏普比率</th>
+                            <th>最大回撤</th>
+                            <th>MAE</th>
+                            <th>RMSE</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    renderBacktestTrades(results) {
+        const tradesEl = document.getElementById('backtestTrades');
+        if (!tradesEl) return;
+
+        // Get best performing model
+        const modelNames = Object.keys(results.models);
+        let bestModel = modelNames[0];
+        let bestReturn = results.models[bestModel].metrics.totalReturn;
+        
+        for (const name of modelNames) {
+            if (results.models[name].metrics.totalReturn > bestReturn) {
+                bestModel = name;
+                bestReturn = results.models[name].metrics.totalReturn;
+            }
+        }
+
+        const trades = results.models[bestModel].trades.slice(0, 20); // Show last 20 trades
+        const rows = trades.map(trade => `
+            <tr>
+                <td>${trade.date}</td>
+                <td>$${trade.entryPrice.toFixed(2)}</td>
+                <td>$${trade.prediction.toFixed(2)}</td>
+                <td>$${trade.actual.toFixed(2)}</td>
+                <td class="${trade.return > 0 ? 'positive' : 'negative'}">${(trade.return * 100).toFixed(2)}%</td>
+                <td class="${trade.directionCorrect ? 'positive' : 'negative'}">${trade.directionCorrect ? '✓' : '✗'}</td>
+                <td>${(trade.error * 100).toFixed(2)}%</td>
+            </tr>
+        `).join('');
+
+        tradesEl.innerHTML = `
+            <h4>${bestModel.toUpperCase()} 模型交易詳情 (最佳表現)</h4>
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>日期</th>
+                            <th>入場價</th>
+                            <th>預測價</th>
+                            <th>實際價</th>
+                            <th>回報</th>
+                            <th>方向正確</th>
+                            <th>誤差</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
     async runAdvancedBacktest(symbol, period, lookbackDays = 90) {
         try {
             this.showLoading(true);
@@ -3271,306 +3572,6 @@ class QuantitativeCalculator {
     }
 
 
-    renderAdvancedBacktestResults(results) {
-        // Create or update backtest results panel
-        let panel = document.getElementById('advancedBacktestPanel');
-        if (!panel) {
-            panel = document.createElement('div');
-            panel.id = 'advancedBacktestPanel';
-            panel.className = 'panel';
-            panel.innerHTML = `
-                <div class="panel-header">
-                    <h3>📊 高級回測分析結果</h3>
-                    <button class="btn btn-sm" onclick="document.getElementById('advancedBacktestPanel').style.display='none'">×</button>
-                </div>
-                <div class="panel-content">
-                    <div id="backtestSummary"></div>
-                    <div id="backtestCharts"></div>
-                    <div id="backtestTable"></div>
-                    <div id="backtestTrades"></div>
-                </div>
-            `;
-            
-            // Insert after the main results panel
-            const mainPanel = document.querySelector('.panel');
-            if (mainPanel) {
-                mainPanel.parentNode.insertBefore(panel, mainPanel.nextSibling);
-            }
-        }
-
-        // Render summary metrics
-        this.renderBacktestSummary(results);
-        
-        // Render performance charts
-        this.renderBacktestCharts(results);
-        
-        // Render detailed table
-        this.renderBacktestTable(results);
-        
-        // Render trades details
-        this.renderBacktestTrades(results);
-        
-        panel.style.display = 'block';
-    }
-
-    renderBacktestSummary(results) {
-        const summaryEl = document.getElementById('backtestSummary');
-        if (!summaryEl) return;
-
-        const summary = results.summary;
-        summaryEl.innerHTML = `
-            <div class="kpi-grid">
-                <div class="kpi-item">
-                    <div class="kpi-label">總交易次數</div>
-                    <div class="kpi-value">${summary.totalTrades}</div>
-                </div>
-                <div class="kpi-item">
-                    <div class="kpi-label">勝率</div>
-                    <div class="kpi-value ${summary.winRate > 0.5 ? 'positive' : 'negative'}">${(summary.winRate * 100).toFixed(1)}%</div>
-                </div>
-                <div class="kpi-item">
-                    <div class="kpi-label">總回報</div>
-                    <div class="kpi-value ${summary.totalReturn > 0 ? 'positive' : 'negative'}">${(summary.totalReturn * 100).toFixed(2)}%</div>
-                </div>
-                <div class="kpi-item">
-                    <div class="kpi-label">夏普比率</div>
-                    <div class="kpi-value">${summary.sharpeRatio.toFixed(3)}</div>
-                </div>
-                <div class="kpi-item">
-                    <div class="kpi-label">最大回撤</div>
-                    <div class="kpi-value negative">${(summary.maxDrawdown * 100).toFixed(2)}%</div>
-                </div>
-                <div class="kpi-item">
-                    <div class="kpi-label">測試期間</div>
-                    <div class="kpi-value">${results.startDate} 至 ${results.endDate}</div>
-                </div>
-            </div>
-        `;
-    }
-
-    renderBacktestCharts(results) {
-        const chartsEl = document.getElementById('backtestCharts');
-        if (!chartsEl) return;
-
-        chartsEl.innerHTML = `
-            <div class="chart-container">
-                <canvas id="backtestPerformanceChart" width="400" height="200"></canvas>
-            </div>
-            <div class="chart-container">
-                <canvas id="backtestAccuracyChart" width="400" height="200"></canvas>
-            </div>
-        `;
-
-        // Performance comparison chart
-        this.renderBacktestPerformanceChart(results);
-        
-        // Accuracy comparison chart
-        this.renderBacktestAccuracyChart(results);
-    }
-
-    renderBacktestPerformanceChart(results) {
-        const ctx = document.getElementById('backtestPerformanceChart');
-        if (!ctx) return;
-
-        const modelNames = Object.keys(results.models);
-        const winRates = modelNames.map(name => results.models[name].metrics.winRate * 100);
-        const totalReturns = modelNames.map(name => results.models[name].metrics.totalReturn * 100);
-        const sharpeRatios = modelNames.map(name => results.models[name].metrics.sharpeRatio);
-
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: modelNames.map(name => name.toUpperCase()),
-                datasets: [
-                    {
-                        label: '勝率 (%)',
-                        data: winRates,
-                        backgroundColor: 'rgba(54, 162, 235, 0.8)',
-                        yAxisID: 'y'
-                    },
-                    {
-                        label: '總回報 (%)',
-                        data: totalReturns,
-                        backgroundColor: 'rgba(255, 99, 132, 0.8)',
-                        yAxisID: 'y1'
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: '模型性能比較'
-                    }
-                },
-                scales: {
-                    y: {
-                        type: 'linear',
-                        display: true,
-                        position: 'left',
-                        title: {
-                            display: true,
-                            text: '勝率 (%)'
-                        }
-                    },
-                    y1: {
-                        type: 'linear',
-                        display: true,
-                        position: 'right',
-                        title: {
-                            display: true,
-                            text: '總回報 (%)'
-                        },
-                        grid: {
-                            drawOnChartArea: false,
-                        },
-                    }
-                }
-            }
-        });
-    }
-
-    renderBacktestAccuracyChart(results) {
-        const ctx = document.getElementById('backtestAccuracyChart');
-        if (!ctx) return;
-
-        const modelNames = Object.keys(results.models);
-        const maeValues = modelNames.map(name => results.models[name].metrics.mae);
-        const rmseValues = modelNames.map(name => results.models[name].metrics.rmse);
-
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: modelNames.map(name => name.toUpperCase()),
-                datasets: [
-                    {
-                        label: 'MAE',
-                        data: maeValues,
-                        backgroundColor: 'rgba(75, 192, 192, 0.8)'
-                    },
-                    {
-                        label: 'RMSE',
-                        data: rmseValues,
-                        backgroundColor: 'rgba(255, 205, 86, 0.8)'
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: '預測準確度比較 (越低越好)'
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: '誤差值'
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    renderBacktestTable(results) {
-        const tableEl = document.getElementById('backtestTable');
-        if (!tableEl) return;
-
-        const modelNames = Object.keys(results.models);
-        const rows = modelNames.map(name => {
-            const metrics = results.models[name].metrics;
-            return `
-                <tr>
-                    <td><strong>${name.toUpperCase()}</strong></td>
-                    <td>${(metrics.winRate * 100).toFixed(1)}%</td>
-                    <td class="${metrics.totalReturn > 0 ? 'positive' : 'negative'}">${(metrics.totalReturn * 100).toFixed(2)}%</td>
-                    <td>${metrics.sharpeRatio.toFixed(3)}</td>
-                    <td class="negative">${(metrics.maxDrawdown * 100).toFixed(2)}%</td>
-                    <td>${metrics.mae.toFixed(4)}</td>
-                    <td>${metrics.rmse.toFixed(4)}</td>
-                </tr>
-            `;
-        }).join('');
-
-        tableEl.innerHTML = `
-            <h4>模型詳細指標</h4>
-            <div class="table-responsive">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>模型</th>
-                            <th>勝率</th>
-                            <th>總回報</th>
-                            <th>夏普比率</th>
-                            <th>最大回撤</th>
-                            <th>MAE</th>
-                            <th>RMSE</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rows}
-                    </tbody>
-                </table>
-            </div>
-        `;
-    }
-
-    renderBacktestTrades(results) {
-        const tradesEl = document.getElementById('backtestTrades');
-        if (!tradesEl) return;
-
-        // Get best performing model
-        const modelNames = Object.keys(results.models);
-        let bestModel = modelNames[0];
-        let bestReturn = results.models[bestModel].metrics.totalReturn;
-        
-        for (const name of modelNames) {
-            if (results.models[name].metrics.totalReturn > bestReturn) {
-                bestModel = name;
-                bestReturn = results.models[name].metrics.totalReturn;
-            }
-        }
-
-        const trades = results.models[bestModel].trades.slice(0, 20); // Show last 20 trades
-        const rows = trades.map(trade => `
-            <tr>
-                <td>${trade.date}</td>
-                <td>$${trade.entryPrice.toFixed(2)}</td>
-                <td>$${trade.prediction.toFixed(2)}</td>
-                <td>$${trade.actual.toFixed(2)}</td>
-                <td class="${trade.return > 0 ? 'positive' : 'negative'}">${(trade.return * 100).toFixed(2)}%</td>
-                <td class="${trade.directionCorrect ? 'positive' : 'negative'}">${trade.directionCorrect ? '✓' : '✗'}</td>
-                <td>${(trade.error * 100).toFixed(2)}%</td>
-            </tr>
-        `).join('');
-
-        tradesEl.innerHTML = `
-            <h4>${bestModel.toUpperCase()} 模型交易詳情 (最佳表現)</h4>
-            <div class="table-responsive">
-                <table class="table table-sm">
-                    <thead>
-                        <tr>
-                            <th>日期</th>
-                            <th>入場價</th>
-                            <th>預測價</th>
-                            <th>實際價</th>
-                            <th>回報</th>
-                            <th>方向正確</th>
-                            <th>誤差</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rows}
-                    </tbody>
-                </table>
-            </div>
-        `;
-    }
 
     async trainLSTMModel(closes, sequenceLength = 20, epochs = 100, units = 50, volumes = null) {
         const tfref = window.tf;
