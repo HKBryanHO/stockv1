@@ -3252,6 +3252,671 @@ app.get('/realtime/:symbol', async (req, res) => {
   }
 });
 
+// 富途 API 高級功能端點
+
+// 實時訂閱管理
+app.post('/futu/subscribe', async (req, res) => {
+  try {
+    const { symbols, dataTypes } = req.body;
+    
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'subscribe', 
+      JSON.stringify(symbols),
+      JSON.stringify(dataTypes)
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          message: '訂閱成功',
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '訂閱失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('訂閱錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 取消訂閱
+app.post('/futu/unsubscribe', async (req, res) => {
+  try {
+    const { symbols } = req.body;
+    
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'unsubscribe', 
+      JSON.stringify(symbols)
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          message: '取消訂閱成功',
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '取消訂閱失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('取消訂閱錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 查詢訂閱狀態
+app.get('/futu/query-subscription', async (req, res) => {
+  try {
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'query_subscription'
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '查詢訂閱狀態失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('查詢訂閱狀態錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 資金流向
+app.post('/futu/capital-flow', async (req, res) => {
+  try {
+    const { symbols } = req.body;
+    
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'capital_flow', 
+      JSON.stringify(symbols)
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '獲取資金流向失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('資金流向錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 資金分布
+app.post('/futu/capital-distribution', async (req, res) => {
+  try {
+    const { symbols } = req.body;
+    
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'capital_distribution', 
+      JSON.stringify(symbols)
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '獲取資金分布失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('資金分布錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 所屬板塊
+app.post('/futu/owner-plate', async (req, res) => {
+  try {
+    const { symbols } = req.body;
+    
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'owner_plate', 
+      JSON.stringify(symbols)
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '獲取所屬板塊失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('所屬板塊錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 市場狀態
+app.post('/futu/market-state', async (req, res) => {
+  try {
+    const { markets } = req.body;
+    
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'market_state', 
+      JSON.stringify(markets)
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '獲取市場狀態失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('市場狀態錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 交易日曆
+app.post('/futu/trading-days', async (req, res) => {
+  try {
+    const { market, startDate, endDate } = req.body;
+    
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'trading_days', 
+      market,
+      startDate,
+      endDate
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '獲取交易日曆失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('交易日曆錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 條件選股
+app.post('/futu/stock-filter', async (req, res) => {
+  try {
+    const { criteria } = req.body;
+    
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'stock_filter', 
+      JSON.stringify(criteria)
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '條件選股失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('條件選股錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 板塊股票
+app.post('/futu/plate-stocks', async (req, res) => {
+  try {
+    const { plateCode } = req.body;
+    
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'plate_stocks', 
+      plateCode
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '獲取板塊股票失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('板塊股票錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 到價提醒
+app.post('/futu/price-reminder', async (req, res) => {
+  try {
+    const { symbol, targetPrice, condition } = req.body;
+    
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'price_reminder', 
+      symbol,
+      targetPrice,
+      condition
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          message: '到價提醒設置成功',
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '設置到價提醒失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('到價提醒錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 自選股分組
+app.get('/futu/user-security-groups', async (req, res) => {
+  try {
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'user_security_groups'
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '獲取自選股分組失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('自選股分組錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 自選股列表
+app.post('/futu/user-securities', async (req, res) => {
+  try {
+    const { groupId } = req.body;
+    
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'user_securities', 
+      groupId
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '獲取自選股列表失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('自選股列表錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 修改自選股
+app.post('/futu/modify-user-securities', async (req, res) => {
+  try {
+    const { groupId, symbols, operation } = req.body;
+    
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'modify_user_securities', 
+      groupId,
+      JSON.stringify(symbols),
+      operation
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          message: '修改自選股成功',
+          data: JSON.parse(output)
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '修改自選股失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('修改自選股錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
 // 富途 API 整合端點
 app.post('/futu/connect', async (req, res) => {
   try {

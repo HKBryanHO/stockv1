@@ -695,6 +695,136 @@
                             <div class="help-text">富途持倉信息將在這裡顯示</div>
                         </div>
                     </div>
+
+                    <!-- 富途高級功能 (Futu Advanced Features) -->
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>富途高級功能 (Futu Advanced Features)</h3>
+                        
+                        <!-- 實時訂閱管理 -->
+                        <div style="margin-bottom:16px;">
+                            <h4>實時訂閱管理</h4>
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                                <input id="subscribeSymbols" type="text" placeholder="股票代碼 (用逗號分隔)" style="flex:1; min-width:200px;">
+                                <select id="subscribeDataTypes" multiple style="flex:0 0 150px;">
+                                    <option value="quote">報價</option>
+                                    <option value="kline">K線</option>
+                                    <option value="orderbook">買賣盤</option>
+                                    <option value="ticker">逐筆</option>
+                                    <option value="rt">分時</option>
+                                </select>
+                                <button id="futuSubscribe" class="btn btn-success btn-sm">
+                                    <i class="fas fa-bell"></i> 訂閱
+                                </button>
+                                <button id="futuUnsubscribe" class="btn btn-warning btn-sm">
+                                    <i class="fas fa-bell-slash"></i> 取消訂閱
+                                </button>
+                                <button id="futuQuerySubscription" class="btn btn-info btn-sm">
+                                    <i class="fas fa-search"></i> 查詢狀態
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 資金流向分析 -->
+                        <div style="margin-bottom:16px;">
+                            <h4>資金流向分析</h4>
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                                <input id="capitalFlowSymbols" type="text" placeholder="股票代碼 (用逗號分隔)" style="flex:1; min-width:200px;">
+                                <button id="futuCapitalFlow" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-chart-line"></i> 資金流向
+                                </button>
+                                <button id="futuCapitalDistribution" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-chart-pie"></i> 資金分布
+                                </button>
+                                <button id="futuOwnerPlate" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-building"></i> 所屬板塊
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 市場狀態監控 -->
+                        <div style="margin-bottom:16px;">
+                            <h4>市場狀態監控</h4>
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                                <select id="marketStateMarkets" multiple style="flex:0 0 120px;">
+                                    <option value="HK">港股</option>
+                                    <option value="US">美股</option>
+                                    <option value="CN">A股</option>
+                                    <option value="SG">新交所</option>
+                                    <option value="JP">日股</option>
+                                </select>
+                                <button id="futuMarketState" class="btn btn-info btn-sm">
+                                    <i class="fas fa-globe"></i> 市場狀態
+                                </button>
+                                <button id="futuTradingDays" class="btn btn-info btn-sm">
+                                    <i class="fas fa-calendar"></i> 交易日曆
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 條件選股 -->
+                        <div style="margin-bottom:16px;">
+                            <h4>條件選股</h4>
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                                <select id="stockFilterCriteria" style="flex:1; min-width:200px;">
+                                    <option value="high_volume">高成交量</option>
+                                    <option value="price_up">價格上漲</option>
+                                    <option value="price_down">價格下跌</option>
+                                    <option value="high_pe">高市盈率</option>
+                                    <option value="low_pe">低市盈率</option>
+                                    <option value="high_market_cap">高市值</option>
+                                    <option value="low_market_cap">低市值</option>
+                                </select>
+                                <button id="futuStockFilter" class="btn btn-success btn-sm">
+                                    <i class="fas fa-filter"></i> 條件選股
+                                </button>
+                                <button id="futuPlateStocks" class="btn btn-success btn-sm">
+                                    <i class="fas fa-layer-group"></i> 板塊股票
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 到價提醒 -->
+                        <div style="margin-bottom:16px;">
+                            <h4>到價提醒</h4>
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                                <input id="reminderSymbol" type="text" placeholder="股票代碼" style="flex:0 0 100px;">
+                                <input id="reminderPrice" type="number" placeholder="目標價格" style="flex:0 0 100px;">
+                                <select id="reminderCondition" style="flex:0 0 100px;">
+                                    <option value="greater">大於</option>
+                                    <option value="less">小於</option>
+                                    <option value="equal">等於</option>
+                                </select>
+                                <button id="futuSetPriceReminder" class="btn btn-warning btn-sm">
+                                    <i class="fas fa-bell"></i> 設置提醒
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 自選股管理 -->
+                        <div style="margin-bottom:16px;">
+                            <h4>自選股管理</h4>
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                                <button id="futuGetUserSecurityGroups" class="btn btn-info btn-sm">
+                                    <i class="fas fa-folder"></i> 自選股分組
+                                </button>
+                                <button id="futuGetUserSecurities" class="btn btn-info btn-sm">
+                                    <i class="fas fa-star"></i> 自選股列表
+                                </button>
+                                <input id="modifySecuritiesSymbols" type="text" placeholder="股票代碼 (用逗號分隔)" style="flex:1; min-width:150px;">
+                                <select id="modifySecuritiesOperation" style="flex:0 0 80px;">
+                                    <option value="add">添加</option>
+                                    <option value="remove">移除</option>
+                                </select>
+                                <button id="futuModifyUserSecurities" class="btn btn-warning btn-sm">
+                                    <i class="fas fa-edit"></i> 修改自選股
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="futuAdvancedResults" class="history-content">
+                            <div class="help-text">高級功能結果將在這裡顯示</div>
+                        </div>
+                    </div>
                     <div class="dashboard-section" style="margin-top:12px;">
                         <h3>訂單管理 (Order Management)</h3>
                         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">

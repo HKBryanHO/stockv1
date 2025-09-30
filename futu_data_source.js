@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-富途數據源模組
-統一使用富途 API 獲取所有股票數據
-"""
+/**
+ * 富途數據源模組
+ * 統一使用富途 API 獲取所有股票數據
+ */
 
 const { spawn } = require('child_process');
 

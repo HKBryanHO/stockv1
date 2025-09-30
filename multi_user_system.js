@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-多用戶支持系統
-包含用戶管理、權限控制、會話管理、數據隔離等功能
-"""
+/**
+ * 多用戶支持系統
+ * 包含用戶管理、權限控制、會話管理、數據隔離等功能
+ */
 
 const express = require('express');
 const bcrypt = require('bcrypt');

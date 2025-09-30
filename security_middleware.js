@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-安全中間件
-包含身份驗證、授權、速率限制、安全頭等
-"""
+/**
+ * 安全中間件
+ * 包含身份驗證、授權、速率限制、安全頭等
+ */
 
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');

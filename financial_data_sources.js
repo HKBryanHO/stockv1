@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-金融數據源模組
-使用 Polygon.io、Finnhub、FMP 作為主要數據源
-"""
+/**
+ * 金融數據源模組
+ * 使用 Polygon.io、Finnhub、FMP 作為主要數據源
+ */
 
 const https = require('https');
 const http = require('http');
