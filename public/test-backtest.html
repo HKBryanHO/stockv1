@@ -88,9 +88,23 @@
                     <option value="30">30天</option>
                     <option value="60">60天</option>
                     <option value="90" selected>90天</option>
+                    <option value="180">6個月</option>
+                    <option value="365">1年</option>
+                    <option value="730">2年</option>
+                    <option value="1095">3年</option>
+                    <option value="1460">4年</option>
+                    <option value="1825">5年</option>
                 </select>
             </div>
             <button class="btn" onclick="testBacktestAPI()">運行回測</button>
+            <div style="margin: 10px 0; padding: 10px; background: #2d3748; border-radius: 5px; font-size: 14px;">
+                <strong>⚠️ 注意：</strong>
+                <ul style="margin: 5px 0 0 20px;">
+                    <li>長時間回測（>1年）可能需要幾分鐘時間</li>
+                    <li>5年回測建議使用穩定的網絡連接</li>
+                    <li>長時間回測會自動優化算法以提高性能</li>
+                </ul>
+            </div>
             <div id="backtestResult" class="result" style="display: none;"></div>
         </div>
         
@@ -127,6 +141,12 @@
             const symbol = document.getElementById('symbol').value;
             const period = parseInt(document.getElementById('period').value);
             const lookbackDays = parseInt(document.getElementById('lookbackDays').value);
+            
+            // Show estimated time for long backtests
+            if (lookbackDays > 365) {
+                const years = Math.ceil(lookbackDays / 365);
+                resultDiv.textContent = `正在運行 ${lookbackDays} 天回測分析（約${years}年）...\n這可能需要較長時間，請耐心等待...`;
+            }
             
             try {
                 const response = await fetch('/api/backtest/run', {

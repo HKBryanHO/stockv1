@@ -1620,7 +1620,7 @@ class StockPredictionApp {
             }
 
             // Get backtest parameters
-            const lookbackDays = parseInt(prompt('請輸入回測天數 (建議 60-120 天):', '90')) || 90;
+            const lookbackDays = parseInt(prompt('請輸入回測天數 (建議 60-1825 天，最多5年):', '90')) || 90;
             const period = formData.days;
 
             if (lookbackDays < 30) {
@@ -1628,8 +1628,28 @@ class StockPredictionApp {
                 return;
             }
 
+            if (lookbackDays > 1825) {
+                this.showToast('回測天數不能超過 1825 天（5年）', 'error', 3000);
+                return;
+            }
+
             this.showLoading(true);
-            this.showToast(`正在運行 ${lookbackDays} 天回測分析...`, 'info', 3000);
+            
+            // Show different messages based on backtest duration
+            let toastMessage;
+            let toastDuration;
+            if (lookbackDays > 365) {
+                toastMessage = `正在運行 ${lookbackDays} 天回測分析（約${Math.ceil(lookbackDays/365)}年）...這可能需要較長時間，請耐心等待`;
+                toastDuration = 8000;
+            } else if (lookbackDays > 180) {
+                toastMessage = `正在運行 ${lookbackDays} 天回測分析...這可能需要幾分鐘時間`;
+                toastDuration = 5000;
+            } else {
+                toastMessage = `正在運行 ${lookbackDays} 天回測分析...`;
+                toastDuration = 3000;
+            }
+            
+            this.showToast(toastMessage, 'info', toastDuration);
 
             const backtestResults = await this.runAdvancedBacktest(formData.symbol, period, lookbackDays);
             

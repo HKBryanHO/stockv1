@@ -1970,15 +1970,20 @@ app.post('/api/backtest/run', authRequired, async (req, res) => {
       }
     };
 
-    const historicalData = await fetchHistoricalData(symbol, lookbackDays + period);
+    // For long backtests, we need more historical data
+    const totalDaysNeeded = Math.min(lookbackDays + period + 100, 2000); // Extra buffer for long backtests
+    const historicalData = await fetchHistoricalData(symbol, totalDaysNeeded);
     
     if (historicalData.closes.length < lookbackDays + period) {
       return res.status(400).json({ 
         error: 'Insufficient historical data for backtesting',
         available: historicalData.closes.length,
-        required: lookbackDays + period
+        required: lookbackDays + period,
+        requested: totalDaysNeeded
       });
     }
+
+    console.log(`✓ Backtest data prepared: ${historicalData.closes.length} days available for ${lookbackDays} day backtest`);
 
     // Perform backtest simulation
     const backtestResults = {
@@ -2000,7 +2005,10 @@ app.post('/api/backtest/run', authRequired, async (req, res) => {
     };
 
     // Simulate predictions for each model
-    for (const modelName of models) {
+    const totalModels = models.length;
+    for (let modelIndex = 0; modelIndex < models.length; modelIndex++) {
+      const modelName = models[modelIndex];
+      console.log(`Processing model ${modelIndex + 1}/${totalModels}: ${modelName}`);
       const modelResults = {
         predictions: [],
         actuals: [],
@@ -2016,8 +2024,14 @@ app.post('/api/backtest/run', authRequired, async (req, res) => {
         }
       };
 
-      // Walk-forward backtest
-      for (let i = 0; i < lookbackDays; i++) {
+      // Walk-forward backtest with optimized step size for long backtests
+      const stepSize = lookbackDays > 365 ? 7 : 1; // Use weekly steps for long backtests
+      const maxSteps = Math.floor(lookbackDays / stepSize);
+      
+      console.log(`Running ${modelName} backtest: ${maxSteps} steps with step size ${stepSize}`);
+      
+      for (let step = 0; step < maxSteps; step++) {
+        const i = step * stepSize;
         const trainData = historicalData.closes.slice(0, historicalData.closes.length - lookbackDays + i);
         const actualPrice = historicalData.closes[historicalData.closes.length - lookbackDays + i + period - 1];
         
