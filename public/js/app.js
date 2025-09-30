@@ -1254,6 +1254,8 @@ class StockPredictionApp {
     // ===== 查詢記錄功能 =====
     async logStockQuery(formData, result) {
         try {
+            console.log('📝 準備記錄股票查詢...', formData.symbol);
+            
             const query = `${formData.symbol} 股票預測 - ${formData.period}天`;
             const resultSummary = `預測價格: $${result.predictedPrice.toFixed(2)}, 信心度: ${(result.confidence * 100).toFixed(1)}%`;
             
@@ -1272,11 +1274,20 @@ class StockPredictionApp {
                 })
             });
             
+            console.log('📡 查詢記錄API響應狀態:', response.status);
+            
             if (response.ok) {
                 const data = await response.json();
                 console.log('✅ 股票查詢已記錄:', data.message);
             } else {
-                console.warn('⚠️ 股票查詢記錄失敗:', response.status);
+                const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                console.warn('⚠️ 股票查詢記錄失敗:', response.status, errorData);
+                
+                if (response.status === 401) {
+                    console.warn('💡 提示: 請先登入系統 (訪問 /login.html)');
+                } else if (response.status === 503) {
+                    console.warn('💡 提示: 數據庫未初始化');
+                }
             }
         } catch (error) {
             console.error('❌ 股票查詢記錄錯誤:', error);
@@ -1285,6 +1296,8 @@ class StockPredictionApp {
 
     async logAIQuery(question, answer, model = 'GPT-4') {
         try {
+            console.log('📝 準備記錄AI查詢...', question.substring(0, 50) + '...');
+            
             const response = await fetch('/api/log-ai-query', {
                 method: 'POST',
                 credentials: 'include',  // 包含cookies以進行認證
@@ -1298,11 +1311,18 @@ class StockPredictionApp {
                 })
             });
             
+            console.log('📡 AI查詢記錄API響應狀態:', response.status);
+            
             if (response.ok) {
                 const data = await response.json();
                 console.log('✅ AI查詢已記錄:', data.message);
             } else {
-                console.warn('⚠️ AI查詢記錄失敗:', response.status);
+                const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                console.warn('⚠️ AI查詢記錄失敗:', response.status, errorData);
+                
+                if (response.status === 401) {
+                    console.warn('💡 提示: 請先登入系統 (訪問 /login.html)');
+                }
             }
         } catch (error) {
             console.error('❌ AI查詢記錄錯誤:', error);
