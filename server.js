@@ -4519,6 +4519,7 @@ app.listen(PORT, () => {
   console.log(`📊 前端地址: http://localhost:8080`);
   console.log(`🔧 API 地址: http://localhost:${PORT}/api`);
   console.log(`🏥 健康檢查: http://localhost:${PORT}/health`);
+  console.log(`🔐 密碼修改功能已啟用 - 版本: ${new Date().toISOString()}`);
 });
 
 
