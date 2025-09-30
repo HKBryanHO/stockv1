@@ -325,19 +325,28 @@ class UserManager {
     async changePassword(userId, newPassword) {
         return new Promise(async (resolve, reject) => {
             try {
-                const bcrypt = require('bcrypt');
+                console.log('UserManager.changePassword called with:', { userId, hasPassword: !!newPassword });
+                
+                if (!this.db) {
+                    throw new Error('Database not initialized');
+                }
+                
                 const saltRounds = 10;
                 const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+                console.log('Password hashed successfully');
                 
                 const sql = 'UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
                 this.db.run(sql, [hashedPassword, userId], function(err) {
                     if (err) {
+                        console.error('Database error in changePassword:', err);
                         reject(err);
                     } else {
+                        console.log('Password update result:', this.changes);
                         resolve(this.changes > 0);
                     }
                 });
             } catch (error) {
+                console.error('Error in changePassword:', error);
                 reject(error);
             }
         });

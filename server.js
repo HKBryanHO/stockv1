@@ -2547,11 +2547,15 @@ app.put('/api/admin/users/:userId/password', adminRequired, async (req, res) => 
     const { userId } = req.params;
     const { newPassword } = req.body;
     
+    console.log('Password change request:', { userId, hasPassword: !!newPassword, passwordLength: newPassword?.length });
+    
     if (!newPassword || newPassword.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
     const success = await userManager.changePassword(parseInt(userId), newPassword);
+    console.log('Password change result:', success);
+    
     if (success) {
       res.json({ success: true, message: 'Password updated successfully' });
     } else {
@@ -2559,7 +2563,8 @@ app.put('/api/admin/users/:userId/password', adminRequired, async (req, res) => 
     }
   } catch (error) {
     console.error('Admin password change error:', error);
-    res.status(500).json({ error: 'Failed to change password' });
+    console.error('Error details:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to change password: ' + error.message });
   }
 });
 
