@@ -19,6 +19,12 @@ class FinancialDataSources {
             finnhub: 'https://finnhub.io/api/v1',
             fmp: 'https://financialmodelingprep.com/api/v3'
         };
+        
+        // 調試信息：檢查 API keys 狀態
+        console.log('🔑 API Keys 狀態檢查:');
+        console.log(`FMP_API_KEY: ${this.apiKeys.fmp ? '已設置 (' + this.apiKeys.fmp.substring(0, 8) + '...)' : '未設置'}`);
+        console.log(`FINNHUB_API_KEY: ${this.apiKeys.finnhub ? '已設置 (' + this.apiKeys.finnhub.substring(0, 8) + '...)' : '未設置'}`);
+        console.log(`POLYGON_API_KEY: ${this.apiKeys.polygon ? '已設置 (' + this.apiKeys.polygon.substring(0, 8) + '...)' : '未設置'}`);
     }
     
     /**
@@ -166,20 +172,30 @@ class FinancialDataSources {
      */
     async fetchFromFMP(symbol, days) {
         const url = `${this.baseUrls.fmp}/historical-price-full/${encodeURIComponent(symbol)}?apikey=${this.apiKeys.fmp}`;
-        const response = await this.makeRequest(url);
-        const data = JSON.parse(response);
+        console.log(`🔍 FMP API URL: ${url.replace(this.apiKeys.fmp, '***')}`);
         
-        if (data && data.historical && Array.isArray(data.historical)) {
-            return data.historical.slice(0, days).reverse().map(item => ({
-                date: item.date,
-                open: parseFloat(item.open),
-                high: parseFloat(item.high),
-                low: parseFloat(item.low),
-                close: parseFloat(item.close),
-                volume: parseFloat(item.volume)
-            }));
+        try {
+            const response = await this.makeRequest(url);
+            const data = JSON.parse(response);
+            
+            if (data && data.historical && Array.isArray(data.historical)) {
+                console.log(`✅ FMP: 獲取到 ${data.historical.length} 條原始記錄`);
+                return data.historical.slice(0, days).reverse().map(item => ({
+                    date: item.date,
+                    open: parseFloat(item.open),
+                    high: parseFloat(item.high),
+                    low: parseFloat(item.low),
+                    close: parseFloat(item.close),
+                    volume: parseFloat(item.volume)
+                }));
+            } else {
+                console.log('❌ FMP: 數據格式錯誤:', data);
+                return null;
+            }
+        } catch (error) {
+            console.log('❌ FMP API 錯誤:', error.message);
+            return null;
         }
-        return null;
     }
     
     /**
