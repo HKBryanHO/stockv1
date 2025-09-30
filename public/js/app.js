@@ -1254,6 +1254,8 @@ class StockPredictionApp {
     }
 
     renderAdvancedBacktestResults(results) {
+        console.log('Rendering backtest results:', results);
+        
         // Create or update backtest results panel
         let panel = document.getElementById('advancedBacktestPanel');
         if (!panel) {
@@ -1273,10 +1275,13 @@ class StockPredictionApp {
                 </div>
             `;
             
-            // Insert after the main results panel
+            // Insert after the main results panel or append to body
             const mainPanel = document.querySelector('.panel');
             if (mainPanel) {
                 mainPanel.parentNode.insertBefore(panel, mainPanel.nextSibling);
+            } else {
+                // Fallback: append to body
+                document.body.appendChild(panel);
             }
         }
 
@@ -1561,6 +1566,7 @@ class StockPredictionApp {
 
             const response = await fetch('/api/backtest/run', {
                 method: 'POST',
+                credentials: 'include',  // 包含cookies以進行認證
                 headers: {
                     'Content-Type': 'application/json',
                 },
@@ -1577,6 +1583,9 @@ class StockPredictionApp {
             }
 
             const backtestResults = await response.json();
+            
+            // Debug: Log the results
+            console.log('Backtest results received:', backtestResults);
             
             // Store backtest results for display
             this.backtestResults = backtestResults;
