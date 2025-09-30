@@ -1238,12 +1238,98 @@ class StockPredictionApp {
             // Setup real-time updates if toggled
             this.setupRealtimeIfEnabled(formData, result);
             this.history.add(result);
+            
+            // 記錄股票查詢
+            this.logStockQuery(formData, result);
+            
             this.showToast('預測完成', 'success');
         } catch (error) {
             this.showError(error.message);
             this.showToast(`錯誤：${error.message}`, 'error');
         } finally {
             this.showLoading(false);
+        }
+    }
+
+    // ===== 查詢記錄功能 =====
+    async logStockQuery(formData, result) {
+        try {
+            const query = `${formData.symbol} 股票預測 - ${formData.period}天`;
+            const resultSummary = `預測價格: $${result.predictedPrice.toFixed(2)}, 信心度: ${(result.confidence * 100).toFixed(1)}%`;
+            
+            const response = await fetch('/api/log-stock-query', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    symbol: formData.symbol,
+                    query: query,
+                    result: resultSummary,
+                    price: result.currentPrice,
+                    change: result.priceChange
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ 股票查詢已記錄:', data.message);
+            } else {
+                console.warn('⚠️ 股票查詢記錄失敗:', response.status);
+            }
+        } catch (error) {
+            console.error('❌ 股票查詢記錄錯誤:', error);
+        }
+    }
+
+    async logAIQuery(question, answer, model = 'GPT-4') {
+        try {
+            const response = await fetch('/api/log-ai-query', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    question: question,
+                    answer: answer,
+                    model: model
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ AI查詢已記錄:', data.message);
+            } else {
+                console.warn('⚠️ AI查詢記錄失敗:', response.status);
+            }
+        } catch (error) {
+            console.error('❌ AI查詢記錄錯誤:', error);
+        }
+    }
+
+    async logUserQuery(type, content, result, metadata = {}) {
+        try {
+            const response = await fetch('/api/log-query', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    type: type,
+                    content: content,
+                    result: result,
+                    metadata: metadata
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ 查詢已記錄:', data.message);
+            } else {
+                console.warn('⚠️ 查詢記錄失敗:', response.status);
+            }
+        } catch (error) {
+            console.error('❌ 查詢記錄錯誤:', error);
         }
     }
 
