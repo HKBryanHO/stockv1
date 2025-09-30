@@ -5,6 +5,8 @@ const dotenv = require('dotenv');
 const http = require('http');
 const crypto = require('crypto');
 const zlib = require('zlib');
+const { MultiUserSystem, authenticateToken, requirePermission, createRateLimit } = require('./multi_user_system');
+const SecurityMiddleware = require('./security_middleware');
 // Try to load SupabaseUserManager first, then fallback to PostgreSQL, then SQLite UserManager
 let UserManager = null;
 try {
@@ -3167,8 +3169,698 @@ app.get('/admin-queries', authRequired, (req, res) => {
   res.sendFile('admin-queries.html', { root: 'public' });
 });
 
+// Historical data endpoint for backtesting - 使用專業金融數據源
+app.post('/historical-data', async (req, res) => {
+  try {
+    const { symbol, days = 365 } = req.body;
+    
+    if (!symbol) {
+      return res.status(400).json({ error: 'Symbol is required' });
+    }
+    
+    console.log(`Fetching historical data for ${symbol} (${days} days) via Financial APIs`);
+    
+    // 使用新的金融數據源
+    const FinancialDataSources = require('./financial_data_sources');
+    const dataSource = new FinancialDataSources();
+    
+    const result = await dataSource.getHistoricalData(symbol, days);
+    
+    if (result.success) {
+      console.log(`✓ ${result.source}: Retrieved ${result.count} days of data`);
+      res.json(result);
+    } else {
+      console.log('All financial APIs failed, using simulated data');
+      const simulatedData = generateSimulatedData(symbol, days);
+      res.json({
+        success: true,
+        data: simulatedData,
+        source: 'Simulated',
+        symbol: symbol,
+        count: simulatedData.length,
+        warning: 'All financial APIs unavailable, using simulated data'
+      });
+    }
+    
+  } catch (error) {
+    console.error('Historical data error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch historical data',
+      message: error.message 
+    });
+  }
+});
+        
+
+// Real-time data endpoint for live trading - 使用專業金融數據源
+app.get('/realtime/:symbol', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    
+    if (!symbol) {
+      return res.status(400).json({ error: 'Symbol is required' });
+    }
+    
+    console.log(`Fetching real-time data for ${symbol} via Financial APIs`);
+    
+    // 使用新的金融數據源
+    const FinancialDataSources = require('./financial_data_sources');
+    const dataSource = new FinancialDataSources();
+    
+    const result = await dataSource.getRealtimeData(symbol);
+    
+    if (result.success) {
+      console.log(`✓ ${result.source}: Retrieved real-time data for ${symbol}`);
+      res.json(result);
+    } else {
+      console.log('All financial APIs failed, using simulated data');
+      const simulatedData = generateSimulatedRealtimeData(symbol);
+      res.json({
+        success: true,
+        data: simulatedData,
+        source: 'Simulated',
+        warning: 'All financial APIs unavailable, using simulated data'
+      });
+    }
+    
+  } catch (error) {
+    console.error('Real-time data error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch real-time data',
+      message: error.message 
+    });
+  }
+});
+
+// 富途 API 整合端點
+app.post('/futu/connect', async (req, res) => {
+  try {
+    const { username, password, host = '127.0.0.1', port = 11111 } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+    
+    // 這裡應該調用 Python 腳本來連接富途 API
+    const { spawn } = require('child_process');
+    const python = spawn('python', ['futu_api_integration.py', 'connect', username, password, host, port]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        res.json({
+          success: true,
+          message: '富途 API 連接成功',
+          output: output
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '富途 API 連接失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('富途 API 連接錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 富途實時行情端點
+app.get('/futu/quote/:symbol', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    
+    if (!symbol) {
+      return res.status(400).json({ error: 'Symbol is required' });
+    }
+    
+    // 調用 Python 腳本獲取富途實時行情
+    const { spawn } = require('child_process');
+    const python = spawn('python', ['futu_api_integration.py', 'quote', symbol]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        try {
+          const data = JSON.parse(output);
+          res.json({
+            success: true,
+            data: data
+          });
+        } catch (parseError) {
+          res.status(500).json({
+            success: false,
+            error: '解析富途數據失敗',
+            details: output
+          });
+        }
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '獲取富途行情失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('富途行情獲取錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 富途下單端點
+app.post('/futu/order', async (req, res) => {
+  try {
+    const { symbol, price, quantity, side, order_type = 'NORMAL', env = 'SIMULATE' } = req.body;
+    
+    if (!symbol || !price || !quantity || !side) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    // 調用 Python 腳本執行下單
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'futu_api_integration.py', 
+      'order', 
+      symbol, 
+      price, 
+      quantity, 
+      side, 
+      order_type, 
+      env
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        try {
+          const data = JSON.parse(output);
+          res.json({
+            success: true,
+            data: data
+          });
+        } catch (parseError) {
+          res.status(500).json({
+            success: false,
+            error: '解析下單結果失敗',
+            details: output
+          });
+        }
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '下單失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('富途下單錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 富途持倉查詢端點
+app.get('/futu/positions', async (req, res) => {
+  try {
+    const { env = 'SIMULATE' } = req.query;
+    
+    // 調用 Python 腳本查詢持倉
+    const { spawn } = require('child_process');
+    const python = spawn('python', ['futu_api_integration.py', 'positions', env]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        try {
+          const data = JSON.parse(output);
+          res.json({
+            success: true,
+            data: data
+          });
+        } catch (parseError) {
+          res.status(500).json({
+            success: false,
+            error: '解析持倉數據失敗',
+            details: output
+          });
+        }
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '查詢持倉失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('富途持倉查詢錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 機器學習模型訓練端點
+app.post('/ml/train', async (req, res) => {
+  try {
+    const { model_type, symbol, period = 252 } = req.body;
+    
+    if (!model_type || !symbol) {
+      return res.status(400).json({ error: 'Model type and symbol are required' });
+    }
+    
+    console.log(`Training ${model_type} model for ${symbol}`);
+    
+    // 調用 Python 腳本訓練模型
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'ml_trading_models.py', 
+      'train', 
+      model_type, 
+      symbol, 
+      period.toString()
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        try {
+          const data = JSON.parse(output);
+          res.json({
+            success: true,
+            data: data
+          });
+        } catch (parseError) {
+          res.status(500).json({
+            success: false,
+            error: '解析訓練結果失敗',
+            details: output
+          });
+        }
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '模型訓練失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('機器學習訓練錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 機器學習預測端點
+app.post('/ml/predict', async (req, res) => {
+  try {
+    const { model_type, symbol, features } = req.body;
+    
+    if (!model_type || !symbol) {
+      return res.status(400).json({ error: 'Model type and symbol are required' });
+    }
+    
+    console.log(`Predicting with ${model_type} model for ${symbol}`);
+    
+    // 調用 Python 腳本進行預測
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'ml_trading_models.py', 
+      'predict', 
+      model_type, 
+      symbol
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        try {
+          const data = JSON.parse(output);
+          res.json({
+            success: true,
+            data: data
+          });
+        } catch (parseError) {
+          res.status(500).json({
+            success: false,
+            error: '解析預測結果失敗',
+            details: output
+          });
+        }
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '模型預測失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('機器學習預測錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 高級策略分析端點
+app.post('/strategy/analyze', async (req, res) => {
+  try {
+    const { strategy_type, symbol1, symbol2, parameters = {} } = req.body;
+    
+    if (!strategy_type) {
+      return res.status(400).json({ error: 'Strategy type is required' });
+    }
+    
+    console.log(`Analyzing ${strategy_type} strategy`);
+    
+    // 調用 Python 腳本進行策略分析
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'advanced_trading_strategies.py', 
+      'analyze', 
+      strategy_type, 
+      symbol1 || '', 
+      symbol2 || '',
+      JSON.stringify(parameters)
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        try {
+          const data = JSON.parse(output);
+          res.json({
+            success: true,
+            data: data
+          });
+        } catch (parseError) {
+          res.status(500).json({
+            success: false,
+            error: '解析策略分析結果失敗',
+            details: output
+          });
+        }
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '策略分析失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('策略分析錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 投資組合優化端點
+app.post('/portfolio/optimize', async (req, res) => {
+  try {
+    const { symbols, method = 'max_sharpe', risk_free_rate = 0.02 } = req.body;
+    
+    if (!symbols || !Array.isArray(symbols) || symbols.length < 2) {
+      return res.status(400).json({ error: 'At least 2 symbols are required' });
+    }
+    
+    console.log(`Optimizing portfolio for ${symbols.join(', ')}`);
+    
+    // 調用 Python 腳本進行投資組合優化
+    const { spawn } = require('child_process');
+    const python = spawn('python', [
+      'advanced_trading_strategies.py', 
+      'optimize', 
+      JSON.stringify(symbols),
+      method,
+      risk_free_rate.toString()
+    ]);
+    
+    let output = '';
+    let error = '';
+    
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    python.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+    
+    python.on('close', (code) => {
+      if (code === 0) {
+        try {
+          const data = JSON.parse(output);
+          res.json({
+            success: true,
+            data: data
+          });
+        } catch (parseError) {
+          res.status(500).json({
+            success: false,
+            error: '解析投資組合優化結果失敗',
+            details: output
+          });
+        }
+      } else {
+        res.status(500).json({
+          success: false,
+          error: '投資組合優化失敗',
+          details: error
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('投資組合優化錯誤:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 初始化多用戶系統
+const multiUserSystem = new MultiUserSystem();
+app.locals.multiUserSystem = multiUserSystem;
+
+// 初始化安全中間件
+const securityMiddleware = new SecurityMiddleware();
+const middlewares = securityMiddleware.getMiddlewares();
+
+// 應用安全中間件
+app.use(middlewares.securityHeaders);
+app.use(middlewares.cors);
+app.use(middlewares.globalRateLimit);
+app.use(middlewares.logRequest);
+
+// 多用戶 API 端點
+// 用戶註冊
+app.post('/api/auth/register', middlewares.loginRateLimit, async (req, res) => {
+  try {
+    const { username, email, password, role = 'user' } = req.body;
+    
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: '用戶名、郵箱和密碼是必需的' });
+    }
+    
+    const result = await multiUserSystem.registerUser({ username, email, password, role });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('用戶註冊錯誤:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// 用戶登錄
+app.post('/api/auth/login', middlewares.loginRateLimit, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: '用戶名和密碼是必需的' });
+    }
+    
+    const result = await multiUserSystem.loginUser(username, password);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('用戶登錄錯誤:', error);
+    res.status(401).json({ error: error.message });
+  }
+});
+
+// 獲取用戶信息
+app.get('/api/auth/user', middlewares.authenticateToken, (req, res) => {
+  try {
+    const userData = multiUserSystem.getUserData(req.user.userId);
+    res.json({ success: true, data: userData });
+  } catch (error) {
+    console.error('獲取用戶信息錯誤:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 更新用戶數據
+app.put('/api/auth/user', middlewares.authenticateToken, (req, res) => {
+  try {
+    const { settings, portfolio } = req.body;
+    const userData = multiUserSystem.updateUserData(req.user.userId, { settings, portfolio });
+    res.json({ success: true, data: userData });
+  } catch (error) {
+    console.error('更新用戶數據錯誤:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 獲取用戶列表（僅管理員）
+app.get('/api/admin/users', middlewares.authenticateToken, middlewares.requirePermission('canViewAllUsers'), (req, res) => {
+  try {
+    const userList = multiUserSystem.getUserList(req.user.userId);
+    res.json({ success: true, data: userList });
+  } catch (error) {
+    console.error('獲取用戶列表錯誤:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 更新用戶狀態（僅管理員）
+app.put('/api/admin/users/:userId/status', middlewares.authenticateToken, middlewares.requirePermission('canManageUsers'), (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { status } = req.body;
+    const result = multiUserSystem.updateUserStatus(userId, status, req.user.userId);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('更新用戶狀態錯誤:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 獲取系統統計（僅管理員）
+app.get('/api/admin/stats', middlewares.authenticateToken, middlewares.requirePermission('canManageSystem'), (req, res) => {
+  try {
+    const stats = multiUserSystem.getSystemStats();
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    console.error('獲取系統統計錯誤:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 健康檢查端點
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+// 應用錯誤處理中間件
+app.use(middlewares.errorHandler);
+
 app.listen(PORT, () => {
-  console.log(`Proxy server listening on http://localhost:${PORT}`);
+  console.log(`🚀 交易系統服務器啟動在 http://localhost:${PORT}`);
+  console.log(`📊 前端地址: http://localhost:8080`);
+  console.log(`🔧 API 地址: http://localhost:${PORT}/api`);
+  console.log(`🏥 健康檢查: http://localhost:${PORT}/health`);
 });
 
 

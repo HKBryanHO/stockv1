@@ -522,6 +522,22 @@
                                 </label>
                                 <button id="tvAlertSet" class="btn btn-danger btn-sm">Set Alert</button>
                             </div>
+                            <div class="btn-group" role="group" aria-label="Signals" style="gap:6px; align-items:center; margin-top:8px;">
+                                <input id="tvSignalPrice" type="number" placeholder="信號價格" step="0.01" style="flex:0 0 140px; min-width:120px;">
+                                <select id="tvSignalType" style="flex:0 0 100px;">
+                                    <option value="buy">買入信號</option>
+                                    <option value="sell">賣出信號</option>
+                                    <option value="hold">持有信號</option>
+                                </select>
+                                <input id="tvSignalStrength" type="range" min="1" max="10" value="5" style="flex:0 0 120px;">
+                                <span id="tvSignalStrengthValue" style="font-size:12px; color:#94a3b8;">強度: 5</span>
+                                <button id="tvSignalAdd" class="btn btn-success btn-sm">
+                                    <i class="fas fa-plus"></i> 添加信號
+                                </button>
+                                <button id="tvSignalClear" class="btn btn-warning btn-sm">
+                                    <i class="fas fa-trash"></i> 清除信號
+                                </button>
+                            </div>
                             <div class="btn-group" role="group" aria-label="Draw" style="gap:6px; align-items:center;">
                                 <button id="tvDrawTrend" class="btn btn-secondary btn-sm">Trend (T)</button>
                                 <button id="tvDrawHLine" class="btn btn-secondary btn-sm">HLine (H)</button>
@@ -554,35 +570,320 @@
                         <div id="tvAlertsList" class="history-content">—</div>
                     </div>
                     <div class="dashboard-section" style="margin-top:12px;">
-                        <h3>Strategy Backtest (MA Crossover)</h3>
-                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <h3>交易信號 (Trading Signals)</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+                            <button id="tvSignalsRefresh" class="btn btn-secondary btn-sm">刷新信號</button>
+                            <button id="tvSignalsExport" class="btn btn-success btn-sm">
+                                <i class="fas fa-download"></i> 導出信號
+                            </button>
+                        </div>
+                        <div id="tvSignalsList" class="history-content">—</div>
+                    </div>
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>實時監控 (Live Monitoring)</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+                            <input id="liveSymbol" type="text" placeholder="監控股票代號" style="flex:0 0 150px;">
+                            <button id="liveStart" class="btn btn-primary btn-sm">
+                                <i class="fas fa-play"></i> 開始監控
+                            </button>
+                            <button id="liveStop" class="btn btn-danger btn-sm" style="display:none;">
+                                <i class="fas fa-stop"></i> 停止監控
+                            </button>
+                            <select id="liveInterval" style="flex:0 0 120px;">
+                                <option value="5000">5秒</option>
+                                <option value="10000">10秒</option>
+                                <option value="30000">30秒</option>
+                                <option value="60000">1分鐘</option>
+                            </select>
+                        </div>
+                        <div id="livePrices" class="history-content">
+                            <div class="help-text">輸入股票代號並點擊「開始監控」來查看實時價格</div>
+                        </div>
+                    </div>
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>投資組合 (Portfolio)</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+                            <button id="portfolioRefresh" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-sync"></i> 刷新
+                            </button>
+                            <button id="portfolioExport" class="btn btn-success btn-sm">
+                                <i class="fas fa-download"></i> 導出
+                            </button>
+                            <button id="portfolioReset" class="btn btn-warning btn-sm">
+                                <i class="fas fa-trash"></i> 重置
+                            </button>
+                        </div>
+                        <div id="portfolioSummary" class="history-content">
+                            <div class="help-text">投資組合信息將在這裡顯示</div>
+                        </div>
+                    </div>
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>富途 API 連接 (Futu API Connection)</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+                            <input id="futuUsername" type="text" placeholder="富途賬號" style="flex:0 0 150px;">
+                            <input id="futuPassword" type="password" placeholder="密碼" style="flex:0 0 120px;">
+                            <input id="futuHost" type="text" value="127.0.0.1" placeholder="主機" style="flex:0 0 100px;">
+                            <input id="futuPort" type="number" value="11111" placeholder="端口" style="flex:0 0 80px;">
+                            <button id="futuConnect" class="btn btn-primary btn-sm">
+                                <i class="fas fa-link"></i> 連接
+                            </button>
+                            <button id="futuDisconnect" class="btn btn-danger btn-sm" style="display:none;">
+                                <i class="fas fa-unlink"></i> 斷開
+                            </button>
+                        </div>
+                        <div id="futuStatus" class="history-content">
+                            <div class="help-text">請輸入富途賬號和密碼，然後點擊「連接」</div>
+                        </div>
+                    </div>
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>富途實時行情 (Futu Real-time Quotes)</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+                            <input id="futuQuoteSymbol" type="text" placeholder="股票代號 (如: HK.00700)" style="flex:0 0 200px;">
+                            <button id="futuGetQuote" class="btn btn-info btn-sm">
+                                <i class="fas fa-chart-line"></i> 獲取行情
+                            </button>
+                            <button id="futuSubscribe" class="btn btn-success btn-sm">
+                                <i class="fas fa-bell"></i> 訂閱
+                            </button>
+                        </div>
+                        <div id="futuQuoteData" class="history-content">
+                            <div class="help-text">富途實時行情數據將在這裡顯示</div>
+                        </div>
+                    </div>
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>富途交易 (Futu Trading)</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+                            <input id="futuOrderSymbol" type="text" placeholder="股票代號" style="flex:0 0 150px;">
+                            <select id="futuOrderSide" style="flex:0 0 80px;">
+                                <option value="BUY">買入</option>
+                                <option value="SELL">賣出</option>
+                            </select>
+                            <input id="futuOrderPrice" type="number" step="0.01" placeholder="價格" style="flex:0 0 100px;">
+                            <input id="futuOrderQty" type="number" placeholder="數量" style="flex:0 0 100px;">
+                            <select id="futuOrderType" style="flex:0 0 100px;">
+                                <option value="NORMAL">普通單</option>
+                                <option value="MARKET">市價單</option>
+                                <option value="LIMIT">限價單</option>
+                            </select>
+                            <select id="futuOrderEnv" style="flex:0 0 100px;">
+                                <option value="SIMULATE">模擬交易</option>
+                                <option value="REAL">實盤交易</option>
+                            </select>
+                            <button id="futuOrderSubmit" class="btn btn-primary btn-sm">
+                                <i class="fas fa-plus"></i> 下單
+                            </button>
+                        </div>
+                        <div id="futuOrderResult" class="history-content">
+                            <div class="help-text">富途交易結果將在這裡顯示</div>
+                        </div>
+                    </div>
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>富途持倉 (Futu Positions)</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+                            <select id="futuPosEnv" style="flex:0 0 120px;">
+                                <option value="SIMULATE">模擬交易</option>
+                                <option value="REAL">實盤交易</option>
+                            </select>
+                            <button id="futuGetPositions" class="btn btn-info btn-sm">
+                                <i class="fas fa-wallet"></i> 查詢持倉
+                            </button>
+                            <button id="futuGetOrders" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-list"></i> 查詢訂單
+                            </button>
+                        </div>
+                        <div id="futuPositions" class="history-content">
+                            <div class="help-text">富途持倉信息將在這裡顯示</div>
+                        </div>
+                    </div>
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>訂單管理 (Order Management)</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+                            <input id="orderSymbol" type="text" placeholder="股票代號" style="flex:0 0 120px;">
+                            <select id="orderType" style="flex:0 0 80px;">
+                                <option value="BUY">買入</option>
+                                <option value="SELL">賣出</option>
+                            </select>
+                            <input id="orderShares" type="number" placeholder="股數" style="flex:0 0 100px;">
+                            <input id="orderPrice" type="number" step="0.01" placeholder="價格" style="flex:0 0 100px;">
+                            <select id="orderOrderType" style="flex:0 0 100px;">
+                                <option value="market">市價</option>
+                                <option value="limit">限價</option>
+                                <option value="stop">止損</option>
+                            </select>
+                            <button id="orderSubmit" class="btn btn-primary btn-sm">
+                                <i class="fas fa-plus"></i> 下單
+                            </button>
+                        </div>
+                        <div id="orderHistory" class="history-content">
+                            <div class="help-text">訂單歷史將在這裡顯示</div>
+                        </div>
+                    </div>
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>機器學習模型 (Machine Learning Models)</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+                            <select id="mlModelType" style="flex:0 0 150px;">
+                                <option value="lstm">LSTM 深度學習</option>
+                                <option value="random_forest">隨機森林</option>
+                                <option value="svm">支持向量機</option>
+                                <option value="ensemble">集成學習</option>
+                            </select>
+                            <input id="mlSymbol" type="text" placeholder="股票代號" style="flex:0 0 120px;">
+                            <input id="mlPeriod" type="number" value="252" placeholder="訓練天數" style="flex:0 0 100px;">
+                            <button id="mlTrain" class="btn btn-primary btn-sm">
+                                <i class="fas fa-brain"></i> 訓練模型
+                            </button>
+                            <button id="mlPredict" class="btn btn-success btn-sm">
+                                <i class="fas fa-crystal-ball"></i> 預測
+                            </button>
+                        </div>
+                        <div id="mlResults" class="history-content">
+                            <div class="help-text">機器學習模型結果將在這裡顯示</div>
+                        </div>
+                    </div>
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>高級交易策略 (Advanced Trading Strategies)</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+                            <select id="strategyType" style="flex:0 0 150px;">
+                                <option value="pairs_trading">配對交易</option>
+                                <option value="mean_reversion">均值回歸</option>
+                                <option value="momentum">動量策略</option>
+                                <option value="multi_factor">多因子模型</option>
+                                <option value="portfolio_optimization">投資組合優化</option>
+                            </select>
+                            <input id="strategySymbol1" type="text" placeholder="股票1" style="flex:0 0 100px;">
+                            <input id="strategySymbol2" type="text" placeholder="股票2" style="flex:0 0 100px;">
+                            <button id="strategyAnalyze" class="btn btn-info btn-sm">
+                                <i class="fas fa-chart-line"></i> 分析
+                            </button>
+                            <button id="strategyBacktest" class="btn btn-warning btn-sm">
+                                <i class="fas fa-play"></i> 回測
+                            </button>
+                        </div>
+                        <div id="strategyResults" class="history-content">
+                            <div class="help-text">高級策略分析結果將在這裡顯示</div>
+                        </div>
+                    </div>
+                    <div class="dashboard-section" style="margin-top:12px;">
+                        <h3>智能信號回測 (Enhanced Signal Backtesting)</h3>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
                             <select id="btStrategy">
-                                <option value="ma">MA Crossover</option>
-                                <option value="donchian">Breakout (Donchian)</option>
-                                <option value="meanrev">Mean Reversion</option>
+                                <option value="technical">技術指標策略</option>
+                                <option value="ma">移動平均交叉</option>
+                                <option value="rsi">RSI 超買超賣</option>
+                                <option value="macd">MACD 信號</option>
+                                <option value="bollinger">布林帶策略</option>
+                                <option value="combined">綜合策略</option>
                             </select>
-                            <input id="btFast" type="number" min="1" value="10" style="width:100px;"> <span>Fast MA</span>
-                            <input id="btSlow" type="number" min="2" value="20" style="width:100px;"> <span>Slow MA</span>
-                            <input id="btCapital" type="number" value="100000" style="width:140px;"> <span>Capital</span>
-                            <input id="btFeeBps" type="number" value="5" style="width:100px;"> <span>Fee (bps)</span>
+                            <input id="btCapital" type="number" value="100000" style="width:140px;"> <span>初始資金</span>
+                            <input id="btRisk" type="range" min="1" max="20" value="10" style="width:120px;">
+                            <span id="btRiskValue" style="font-size:12px;">風險: 10%</span>
                             <select id="btRange">
-                                <option value="1y">1y</option>
-                                <option value="2y" selected>2y</option>
-                                <option value="5y">5y</option>
+                                <option value="3m">3個月</option>
+                                <option value="6m">6個月</option>
+                                <option value="1y" selected>1年</option>
+                                <option value="2y">2年</option>
                             </select>
-                            <input id="btPresetName" type="text" placeholder="Preset 名稱" style="width:160px;">
-                            <button id="btPresetSave" class="btn btn-secondary"><i class="fas fa-save"></i> Save Preset</button>
-                            <select id="btPresetApply" style="width:180px;"><option value="">Apply Preset…</option></select>
-                            <button id="btRun" class="btn btn-primary"><i class="fas fa-play"></i> Run</button>
-                            <button id="btAddCompare" class="btn btn-secondary"><i class="fas fa-plus"></i> Add to Compare</button>
-                            <button id="btRunCompare" class="btn btn-secondary"><i class="fas fa-table"></i> Compare</button>
+                            <button id="btRun" class="btn btn-primary">
+                                <i class="fas fa-play"></i> 開始回測
+                            </button>
+                            <button id="btStop" class="btn btn-danger" style="display:none;">
+                                <i class="fas fa-stop"></i> 停止回測
+                            </button>
                         </div>
-                        <div id="btResults" class="history-content" style="margin-top:8px;">—</div>
-                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px;">
-                            <button id="btExportTrades" class="btn btn-secondary btn-sm"><i class="fas fa-file-csv"></i> Export Trades CSV</button>
-                            <button id="btExportReport" class="btn btn-secondary btn-sm"><i class="fas fa-file-alt"></i> Export Report (MD)</button>
+                        
+                        <!-- 回測結果顯示 -->
+                        <div id="btResults" class="history-content" style="margin-top:8px;">
+                            <div class="help-text">點擊「開始回測」來測試您的交易策略</div>
                         </div>
-                        <div id="btCompareTable" class="history-content" style="margin-top:8px;">—</div>
+                        
+                        <!-- 績效指標 -->
+                        <div id="btPerformance" style="display:none; margin-top:12px;">
+                            <h4>績效分析</h4>
+                            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:12px;">
+                                <div class="performance-card" style="background:#0a0e1a; border:1px solid #1f2937; border-radius:6px; padding:12px;">
+                                    <div style="color:#10b981; font-size:18px; font-weight:bold;" id="btTotalReturn">總回報: --</div>
+                                    <div style="color:#94a3b8; font-size:12px;">相對於初始資金</div>
+                    </div>
+                                <div class="performance-card" style="background:#0a0e1a; border:1px solid #1f2937; border-radius:6px; padding:12px;">
+                                    <div style="color:#3b82f6; font-size:18px; font-weight:bold;" id="btWinRate">勝率: --</div>
+                                    <div style="color:#94a3b8; font-size:12px;">獲利交易比例</div>
+                                </div>
+                                <div class="performance-card" style="background:#0a0e1a; border:1px solid #1f2937; border-radius:6px; padding:12px;">
+                                    <div style="color:#f59e0b; font-size:18px; font-weight:bold;" id="btMaxDD">最大回撤: --</div>
+                                    <div style="color:#94a3b8; font-size:12px;">最大虧損幅度</div>
+                                </div>
+                                <div class="performance-card" style="background:#0a0e1a; border:1px solid #1f2937; border-radius:6px; padding:12px;">
+                                    <div style="color:#8b5cf6; font-size:18px; font-weight:bold;" id="btSharpe">夏普比率: --</div>
+                                    <div style="color:#94a3b8; font-size:12px;">風險調整後收益</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 交易記錄 -->
+                        <div id="btTrades" style="display:none; margin-top:12px;">
+                            <h4>交易記錄</h4>
+                            <div style="max-height:300px; overflow-y:auto; border:1px solid #1f2937; border-radius:6px;">
+                                <table style="width:100%; border-collapse:collapse;">
+                                    <thead style="background:#0a0e1a; position:sticky; top:0;">
+                                        <tr>
+                                            <th style="padding:8px; border-bottom:1px solid #1f2937;">日期</th>
+                                            <th style="padding:8px; border-bottom:1px solid #1f2937;">類型</th>
+                                            <th style="padding:8px; border-bottom:1px solid #1f2937;">價格</th>
+                                            <th style="padding:8px; border-bottom:1px solid #1f2937;">股數</th>
+                                            <th style="padding:8px; border-bottom:1px solid #1f2937;">金額</th>
+                                            <th style="padding:8px; border-bottom:1px solid #1f2937;">信號原因</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="btTradesList">
+                                        <!-- 交易記錄將在這裡動態生成 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <!-- 導出功能 -->
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:12px;">
+                            <button id="btExportTrades" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-file-csv"></i> 導出交易記錄
+                            </button>
+                            <button id="btExportReport" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-file-alt"></i> 導出回測報告
+                            </button>
+                            <button id="btExportChart" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-chart-line"></i> 導出圖表
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Tab -->
+            <div id="admin-tab" class="tab-content" role="tabpanel" aria-labelledby="tab-admin" aria-hidden="true">
+                <div class="dashboard-section">
+                    <h2>用戶管理</h2>
+                    <div class="permissions-grid">
+                        <div class="permission-card">
+                            <h4>用戶列表</h4>
+                            <div id="userList" class="history-content">
+                                <div class="help-text">用戶列表將在這裡顯示</div>
+                            </div>
+                            <div class="permission-actions">
+                                <button id="refreshUsers" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-sync"></i> 刷新
+                                </button>
+                            </div>
+                        </div>
+                        <div class="permission-card">
+                            <h4>系統統計</h4>
+                            <div id="systemStats" class="history-content">
+                                <div class="help-text">系統統計將在這裡顯示</div>
+                            </div>
+                            <div class="permission-actions">
+                                <button id="refreshStats" class="btn btn-info btn-sm">
+                                    <i class="fas fa-chart-bar"></i> 刷新統計
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

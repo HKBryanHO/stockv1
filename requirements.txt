@@ -1,0 +1,28 @@
+# Web 框架
+express==4.18.2
+cors==2.8.5
+dotenv==16.3.1
+
+# 機器學習和數據分析
+numpy==1.24.3
+pandas==2.0.3
+scikit-learn==1.3.0
+tensorflow==2.13.0
+matplotlib==3.7.2
+seaborn==0.12.2
+
+# 技術分析
+ta-lib==0.4.28
+yfinance==0.2.18
+
+# 富途 API
+futu-api==9.4.5408
+
+# 數據庫
+pg==8.8.0
+sqlite3==0.0.0
+
+# 其他工具
+requests==2.31.0
+python-dateutil==2.8.2
+pytz==2023.3
