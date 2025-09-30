@@ -299,24 +299,56 @@ class FinancialDataSources {
     }
     
     /**
-     * 生成模擬歷史數據
+     * 生成模擬歷史數據 - 改善版本，更接近真實股票數據
      */
     generateSimulatedData(symbol, days) {
         const data = [];
-        const basePrice = 100 + Math.random() * 50;
+        
+        // 根據股票代碼設定不同的基礎價格範圍
+        let basePrice, volatility;
+        if (symbol.includes('NVDA') || symbol.includes('MSFT') || symbol.includes('GOOGL')) {
+            basePrice = 200 + Math.random() * 300; // 科技股價格較高
+            volatility = 0.03;
+        } else if (symbol.includes('AAPL') || symbol.includes('AMZN')) {
+            basePrice = 150 + Math.random() * 200;
+            volatility = 0.025;
+        } else if (symbol.includes('TSLA') || symbol.includes('PLTR')) {
+            basePrice = 50 + Math.random() * 100; // 波動性較大的股票
+            volatility = 0.05;
+        } else {
+            basePrice = 50 + Math.random() * 150; // 一般股票
+            volatility = 0.03;
+        }
+        
         let currentPrice = basePrice;
         
         for (let i = days; i >= 0; i--) {
             const date = new Date();
             date.setDate(date.getDate() - i);
             
-            const change = (Math.random() - 0.5) * 0.1;
+            // 使用更真實的價格變動模型 (幾何布朗運動)
+            const drift = 0.0001; // 微小正漂移
+            const randomShock = (Math.random() - 0.5) * volatility;
+            const change = drift + randomShock;
             currentPrice = currentPrice * (1 + change);
             
-            const open = currentPrice * (1 + (Math.random() - 0.5) * 0.02);
-            const high = Math.max(open, currentPrice) * (1 + Math.random() * 0.02);
-            const low = Math.min(open, currentPrice) * (1 - Math.random() * 0.02);
-            const volume = Math.floor(Math.random() * 1000000) + 100000;
+            // 確保價格不會過低
+            if (currentPrice < 1) currentPrice = 1;
+            
+            // 生成 OHLC 數據
+            const open = currentPrice * (1 + (Math.random() - 0.5) * 0.01);
+            const high = Math.max(open, currentPrice) * (1 + Math.random() * 0.015);
+            const low = Math.min(open, currentPrice) * (1 - Math.random() * 0.015);
+            
+            // 根據股票類型設定成交量
+            let volume;
+            if (symbol.includes('NVDA') || symbol.includes('AAPL')) {
+                volume = Math.floor(Math.random() * 50000000) + 10000000; // 大盤股
+            } else if (symbol.includes('PLTR') || symbol.includes('IONQ')) {
+                volume = Math.floor(Math.random() * 10000000) + 1000000; // 中小盤股
+            } else {
+                volume = Math.floor(Math.random() * 20000000) + 2000000; // 一般股票
+            }
             
             data.push({
                 date: date.toISOString().split('T')[0],
