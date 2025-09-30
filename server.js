@@ -2538,6 +2538,31 @@ app.delete('/api/admin/users/:userId', adminRequired, async (req, res) => {
   }
 });
 
+app.put('/api/admin/users/:userId/password', adminRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Admin features are not available. Database not initialized.' });
+  }
+
+  try {
+    const { userId } = req.params;
+    const { newPassword } = req.body;
+    
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
+    const success = await userManager.changePassword(parseInt(userId), newPassword);
+    if (success) {
+      res.json({ success: true, message: 'Password updated successfully' });
+    } else {
+      res.status(404).json({ error: 'User not found' });
+    }
+  } catch (error) {
+    console.error('Admin password change error:', error);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
 // Protect direct access to index.html
 app.get('/index.html', authRequired, (req, res) => {
   res.sendFile('index.html', { root: 'public' });

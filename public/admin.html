@@ -48,6 +48,8 @@
         .form-group label { display: block; margin-bottom: 6px; font-weight: 500; }
         .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #374151; border-radius: 6px; background: #0a0e1a; color: #e5e7eb; }
         .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+        .btn-warning { background: #d97706; color: white; }
+        .btn-warning:hover { background: #b45309; }
     </style>
 </head>
 <body>
@@ -127,6 +129,30 @@
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
                     <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 修改密碼模態框 -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>修改密碼</h3>
+                <button class="close-btn" onclick="closePasswordModal()">&times;</button>
+            </div>
+            <form id="changePasswordForm">
+                <div class="form-group">
+                    <label for="newPassword">新密碼</label>
+                    <input id="newPassword" name="newPassword" type="password" required minlength="6" placeholder="至少6個字符">
+                </div>
+                <div class="form-group">
+                    <label for="confirmPassword">確認新密碼</label>
+                    <input id="confirmPassword" name="confirmPassword" type="password" required minlength="6" placeholder="再次輸入新密碼">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closePasswordModal()">取消</button>
+                    <button type="submit" class="btn btn-warning">修改密碼</button>
                 </div>
             </form>
         </div>
@@ -224,6 +250,7 @@
                         <td>
                             <div class="action-buttons">
                                 <button class="btn btn-primary btn-small" onclick="editUser(${user.id})">編輯</button>
+                                <button class="btn btn-warning btn-small" onclick="changePassword(${user.id})">修改密碼</button>
                                 <button class="btn btn-danger btn-small" onclick="deleteUser(${user.id})">刪除</button>
                             </div>
                         </td>
@@ -415,11 +442,68 @@
             }
         });
 
+        // 修改密碼功能
+        async function changePassword(userId) {
+            currentUserId = userId;
+            const modal = document.getElementById('changePasswordModal');
+            modal.style.display = 'block';
+        }
+
+        function closePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'none';
+            document.getElementById('changePasswordForm').reset();
+            currentUserId = null;
+        }
+
+        // 修改密碼表單提交
+        document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!currentUserId) return;
+
+            const formData = new FormData(e.target);
+            const { newPassword, confirmPassword } = Object.fromEntries(formData.entries());
+
+            // 驗證密碼
+            if (newPassword !== confirmPassword) {
+                alert('兩次輸入的密碼不一致');
+                return;
+            }
+
+            if (newPassword.length < 6) {
+                alert('密碼長度至少需要6個字符');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/users/${currentUserId}/password`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ newPassword })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert('密碼修改成功');
+                    closePasswordModal();
+                } else {
+                    alert('密碼修改失敗: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Change password error:', error);
+                alert('密碼修改失敗: ' + error.message);
+            }
+        });
+
         // 點擊模態框外部關閉
         window.onclick = function(event) {
-            const modal = document.getElementById('editUserModal');
-            if (event.target === modal) {
+            const editModal = document.getElementById('editUserModal');
+            const passwordModal = document.getElementById('changePasswordModal');
+            if (event.target === editModal) {
                 closeModal();
+            } else if (event.target === passwordModal) {
+                closePasswordModal();
             }
         }
     </script>

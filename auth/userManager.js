@@ -322,6 +322,27 @@ class UserManager {
         });
     }
 
+    async changePassword(userId, newPassword) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const bcrypt = require('bcrypt');
+                const saltRounds = 10;
+                const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+                
+                const sql = 'UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+                this.db.run(sql, [hashedPassword, userId], function(err) {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(this.changes > 0);
+                    }
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
     async deleteUser(userId) {
         return new Promise((resolve, reject) => {
             // 軟刪除：將狀態設為 inactive
