@@ -4503,6 +4503,17 @@ app.get('/health', (req, res) => {
 // 應用錯誤處理中間件
 app.use(middlewares.errorHandler);
 
+// 添加進程錯誤處理
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 交易系統服務器啟動在 http://localhost:${PORT}`);
   console.log(`📊 前端地址: http://localhost:8080`);
