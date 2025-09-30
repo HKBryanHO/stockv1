@@ -89,13 +89,23 @@ class FinancialDataSources {
         
         // 4. 所有 API 都失敗，返回模擬數據
         console.log('⚠️ 所有 API 都失敗，使用模擬數據');
+        console.log('💡 提示：請配置以下 API keys 以獲取真實數據：');
+        console.log('   - FMP_API_KEY (Financial Modeling Prep)');
+        console.log('   - FINNHUB_API_KEY (Finnhub)');
+        console.log('   - POLYGON_API_KEY (Polygon.io)');
+        
         return {
             success: true,
             data: this.generateSimulatedData(symbol, days),
             source: 'Simulated',
             symbol: symbol,
             count: days,
-            warning: '所有數據源都不可用，使用模擬數據'
+            warning: '所有數據源都不可用，使用模擬數據。請配置 API keys 以獲取真實數據。',
+            apiKeysStatus: {
+                fmp: !!this.apiKeys.fmp,
+                finnhub: !!this.apiKeys.finnhub,
+                polygon: !!this.apiKeys.polygon
+            }
         };
     }
     
