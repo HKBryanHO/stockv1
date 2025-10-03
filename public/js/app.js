@@ -877,6 +877,7 @@ class StockPredictionApp {
 
         this.showLoading(true);
         this.clearResults();
+        this.hideAddToWatchlistButton(); // 隱藏"加入模擬倉"按鈕
         this.showToast('正在同步 Yahoo 真實數據...', 'info');
         
         // Debug mode: log backend configuration
@@ -1245,6 +1246,9 @@ class StockPredictionApp {
             this.logStockQuery(formData, result);
             
             this.showToast('預測完成', 'success');
+            
+            // 顯示"加入模擬倉"按鈕
+            this.showAddToWatchlistButton();
         } catch (error) {
             this.showError(error.message);
             this.showToast(`錯誤：${error.message}`, 'error');
@@ -4695,6 +4699,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Make app globally available for history rerun
     window.app = app;
+    
+    // Initialize watchlist functionality
+    app.initWatchlist();
     // Wire Perplexity AI minimal client
     console.log('Starting Perplexity AI client setup...');
     try {
@@ -8343,4 +8350,277 @@ StockPredictionApp.prototype.savePermissions = function() {
     localStorage.setItem('userPermissions', JSON.stringify(permissions));
     
     alert('權限設置已保存！');
+};
+
+// 模擬倉管理功能
+StockPredictionApp.prototype.initWatchlist = function() {
+    this.currentWatchlistId = null;
+    this.watchlists = [];
+    this.setupWatchlistEventListeners();
+    this.loadWatchlists();
+};
+
+StockPredictionApp.prototype.setupWatchlistEventListeners = function() {
+    // 創建模擬倉按鈕
+    const createBtn = document.getElementById('createWatchlistBtn');
+    if (createBtn) {
+        createBtn.addEventListener('click', () => this.showCreateWatchlistModal());
+    }
+    
+    // 刷新模擬倉按鈕
+    const refreshBtn = document.getElementById('refreshWatchlistBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => this.loadWatchlists());
+    }
+    
+    // 加入模擬倉按鈕
+    const addBtn = document.getElementById('addToWatchlistBtn');
+    if (addBtn) {
+        addBtn.addEventListener('click', () => this.showAddToWatchlistModal());
+    }
+};
+
+StockPredictionApp.prototype.loadWatchlists = async function() {
+    try {
+        const response = await fetch('/api/watchlists');
+        const result = await response.json();
+        
+        if (result.success) {
+            this.watchlists = result.watchlists;
+            this.renderWatchlistTabs();
+            
+            // 如果沒有默認模擬倉，創建一個
+            if (this.watchlists.length === 0) {
+                await this.createDefaultWatchlist();
+            } else {
+                // 選擇第一個模擬倉
+                this.selectWatchlist(this.watchlists[0].id);
+            }
+        } else {
+            console.error('Failed to load watchlists:', result.error);
+        }
+    } catch (error) {
+        console.error('Error loading watchlists:', error);
+    }
+};
+
+StockPredictionApp.prototype.createDefaultWatchlist = async function() {
+    try {
+        const response = await fetch('/api/watchlists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: '我的模擬倉',
+                description: '默認模擬倉'
+            })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            await this.loadWatchlists();
+        }
+    } catch (error) {
+        console.error('Error creating default watchlist:', error);
+    }
+};
+
+StockPredictionApp.prototype.renderWatchlistTabs = function() {
+    const tabsContainer = document.getElementById('watchlistTabs');
+    if (!tabsContainer) return;
+    
+    tabsContainer.innerHTML = '';
+    
+    this.watchlists.forEach(watchlist => {
+        const tab = document.createElement('div');
+        tab.className = 'watchlist-tab';
+        tab.textContent = `${watchlist.name} (${watchlist.stock_count || 0})`;
+        tab.addEventListener('click', () => this.selectWatchlist(watchlist.id));
+        
+        if (watchlist.id === this.currentWatchlistId) {
+            tab.classList.add('active');
+        }
+        
+        tabsContainer.appendChild(tab);
+    });
+};
+
+StockPredictionApp.prototype.selectWatchlist = async function(watchlistId) {
+    this.currentWatchlistId = watchlistId;
+    this.renderWatchlistTabs();
+    await this.loadWatchlistStocks(watchlistId);
+};
+
+StockPredictionApp.prototype.loadWatchlistStocks = async function(watchlistId) {
+    try {
+        const response = await fetch(`/api/watchlists/${watchlistId}/stocks`);
+        const result = await response.json();
+        
+        if (result.success) {
+            this.renderWatchlistStocks(result.stocks);
+        } else {
+            console.error('Failed to load watchlist stocks:', result.error);
+        }
+    } catch (error) {
+        console.error('Error loading watchlist stocks:', error);
+    }
+};
+
+StockPredictionApp.prototype.renderWatchlistStocks = function(stocks) {
+    const content = document.getElementById('watchlistContent');
+    if (!content) return;
+    
+    if (stocks.length === 0) {
+        content.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-chart-line"></i>
+                <p>還沒有股票在模擬倉中</p>
+                <p class="help-text">搜索股票後點擊"加入模擬倉"按鈕</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const stocksHtml = stocks.map(stock => `
+        <div class="stock-item">
+            <div class="stock-info">
+                <div class="stock-symbol">${stock.symbol}</div>
+                <div class="stock-name">${stock.company_name || '未知公司'}</div>
+                ${stock.added_price ? `<div class="stock-price">加入價格: $${stock.added_price}</div>` : ''}
+            </div>
+            <div class="stock-actions">
+                <button class="btn btn-primary btn-sm" onclick="app.analyzeStock('${stock.symbol}')">
+                    <i class="fas fa-chart-line"></i> 分析
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="app.removeFromWatchlist('${stock.symbol}')">
+                    <i class="fas fa-trash"></i> 移除
+                </button>
+            </div>
+        </div>
+    `).join('');
+    
+    content.innerHTML = `<div class="watchlist-stocks">${stocksHtml}</div>`;
+};
+
+StockPredictionApp.prototype.showCreateWatchlistModal = function() {
+    const name = prompt('請輸入模擬倉名稱:');
+    if (!name) return;
+    
+    const description = prompt('請輸入描述 (可選):') || '';
+    
+    this.createWatchlist(name, description);
+};
+
+StockPredictionApp.prototype.createWatchlist = async function(name, description) {
+    try {
+        const response = await fetch('/api/watchlists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            await this.loadWatchlists();
+            alert('模擬倉創建成功！');
+        } else {
+            alert('創建失敗: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Error creating watchlist:', error);
+        alert('創建失敗: ' + error.message);
+    }
+};
+
+StockPredictionApp.prototype.showAddToWatchlistModal = function() {
+    if (!this.currentWatchlistId) {
+        alert('請先選擇一個模擬倉');
+        return;
+    }
+    
+    const symbol = document.getElementById('stockSymbol')?.value;
+    if (!symbol) {
+        alert('請先輸入股票代號');
+        return;
+    }
+    
+    const companyName = prompt('請輸入公司名稱 (可選):') || '';
+    const addedPrice = prompt('請輸入加入價格 (可選):') || null;
+    const notes = prompt('請輸入備註 (可選):') || '';
+    
+    this.addStockToWatchlist(symbol, companyName, addedPrice, notes);
+};
+
+StockPredictionApp.prototype.addStockToWatchlist = async function(symbol, companyName, addedPrice, notes) {
+    try {
+        const response = await fetch(`/api/watchlists/${this.currentWatchlistId}/stocks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol,
+                companyName,
+                addedPrice: addedPrice ? parseFloat(addedPrice) : null,
+                notes
+            })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            await this.loadWatchlistStocks(this.currentWatchlistId);
+            alert('股票已加入模擬倉！');
+        } else {
+            alert('加入失敗: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Error adding stock to watchlist:', error);
+        alert('加入失敗: ' + error.message);
+    }
+};
+
+StockPredictionApp.prototype.removeFromWatchlist = async function(symbol) {
+    if (!confirm(`確定要從模擬倉中移除 ${symbol} 嗎？`)) return;
+    
+    try {
+        const response = await fetch(`/api/watchlists/${this.currentWatchlistId}/stocks/${symbol}`, {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            await this.loadWatchlistStocks(this.currentWatchlistId);
+            alert('股票已從模擬倉移除！');
+        } else {
+            alert('移除失敗: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Error removing stock from watchlist:', error);
+        alert('移除失敗: ' + error.message);
+    }
+};
+
+StockPredictionApp.prototype.analyzeStock = function(symbol) {
+    // 設置股票代號並觸發分析
+    const symbolInput = document.getElementById('stockSymbol');
+    if (symbolInput) {
+        symbolInput.value = symbol;
+        // 觸發預測
+        const predictBtn = document.getElementById('predictBtn');
+        if (predictBtn) {
+            predictBtn.click();
+        }
+    }
+};
+
+// 在預測成功後顯示"加入模擬倉"按鈕
+StockPredictionApp.prototype.showAddToWatchlistButton = function() {
+    const addBtn = document.getElementById('addToWatchlistBtn');
+    if (addBtn) {
+        addBtn.style.display = 'block';
+    }
+};
+
+StockPredictionApp.prototype.hideAddToWatchlistButton = function() {
+    const addBtn = document.getElementById('addToWatchlistBtn');
+    if (addBtn) {
+        addBtn.style.display = 'none';
+    }
 };

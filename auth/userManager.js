@@ -387,6 +387,131 @@ class UserManager {
         });
     }
 
+    // 模擬倉管理方法
+    async createWatchlist(userId, name = '我的模擬倉', description = '') {
+        return new Promise((resolve, reject) => {
+            const sql = 'INSERT INTO user_watchlists (user_id, name, description) VALUES (?, ?, ?)';
+            this.db.run(sql, [userId, name, description], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.lastID);
+                }
+            });
+        });
+    }
+
+    async getUserWatchlists(userId) {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                SELECT w.*, 
+                       COUNT(ws.id) as stock_count
+                FROM user_watchlists w
+                LEFT JOIN watchlist_stocks ws ON w.id = ws.watchlist_id AND ws.is_active = 1
+                WHERE w.user_id = ?
+                GROUP BY w.id
+                ORDER BY w.is_default DESC, w.created_at DESC
+            `;
+            this.db.all(sql, [userId], (err, rows) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(rows);
+                }
+            });
+        });
+    }
+
+    async addStockToWatchlist(watchlistId, symbol, companyName = '', addedPrice = null, notes = '') {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                INSERT OR REPLACE INTO watchlist_stocks 
+                (watchlist_id, symbol, company_name, added_price, notes, added_date)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            `;
+            this.db.run(sql, [watchlistId, symbol, companyName, addedPrice, notes], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.lastID);
+                }
+            });
+        });
+    }
+
+    async getWatchlistStocks(watchlistId) {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                SELECT * FROM watchlist_stocks 
+                WHERE watchlist_id = ? AND is_active = 1
+                ORDER BY added_date DESC
+            `;
+            this.db.all(sql, [watchlistId], (err, rows) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(rows);
+                }
+            });
+        });
+    }
+
+    async removeStockFromWatchlist(watchlistId, symbol) {
+        return new Promise((resolve, reject) => {
+            const sql = 'UPDATE watchlist_stocks SET is_active = 0 WHERE watchlist_id = ? AND symbol = ?';
+            this.db.run(sql, [watchlistId, symbol], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.changes > 0);
+                }
+            });
+        });
+    }
+
+    async updateWatchlistStock(watchlistId, symbol, updates) {
+        return new Promise((resolve, reject) => {
+            const allowedFields = ['target_price', 'stop_loss', 'notes'];
+            const updateFields = [];
+            const values = [];
+
+            for (const [key, value] of Object.entries(updates)) {
+                if (allowedFields.includes(key) && value !== undefined) {
+                    updateFields.push(`${key} = ?`);
+                    values.push(value);
+                }
+            }
+
+            if (updateFields.length === 0) {
+                return resolve(false);
+            }
+
+            values.push(watchlistId, symbol);
+            const sql = `UPDATE watchlist_stocks SET ${updateFields.join(', ')} WHERE watchlist_id = ? AND symbol = ?`;
+            
+            this.db.run(sql, values, function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.changes > 0);
+                }
+            });
+        });
+    }
+
+    async deleteWatchlist(watchlistId) {
+        return new Promise((resolve, reject) => {
+            const sql = 'DELETE FROM user_watchlists WHERE id = ?';
+            this.db.run(sql, [watchlistId], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.changes > 0);
+                }
+            });
+        });
+    }
+
     close() {
         if (this.db) {
             this.db.close((err) => {

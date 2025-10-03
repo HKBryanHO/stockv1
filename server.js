@@ -2568,6 +2568,141 @@ app.put('/api/admin/users/:userId/password', adminRequired, async (req, res) => 
   }
 });
 
+// 模擬倉管理 API 端點
+app.get('/api/watchlists', authRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Watchlist features are not available. Database not initialized.' });
+  }
+
+  try {
+    const watchlists = await userManager.getUserWatchlists(req.user.id);
+    res.json({ success: true, watchlists });
+  } catch (error) {
+    console.error('Get watchlists error:', error);
+    res.status(500).json({ error: 'Failed to get watchlists' });
+  }
+});
+
+app.post('/api/watchlists', authRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Watchlist features are not available. Database not initialized.' });
+  }
+
+  try {
+    const { name, description } = req.body;
+    const watchlistId = await userManager.createWatchlist(req.user.id, name, description);
+    res.json({ success: true, watchlistId, message: 'Watchlist created successfully' });
+  } catch (error) {
+    console.error('Create watchlist error:', error);
+    res.status(500).json({ error: 'Failed to create watchlist' });
+  }
+});
+
+app.get('/api/watchlists/:watchlistId/stocks', authRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Watchlist features are not available. Database not initialized.' });
+  }
+
+  try {
+    const { watchlistId } = req.params;
+    const stocks = await userManager.getWatchlistStocks(parseInt(watchlistId));
+    res.json({ success: true, stocks });
+  } catch (error) {
+    console.error('Get watchlist stocks error:', error);
+    res.status(500).json({ error: 'Failed to get watchlist stocks' });
+  }
+});
+
+app.post('/api/watchlists/:watchlistId/stocks', authRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Watchlist features are not available. Database not initialized.' });
+  }
+
+  try {
+    const { watchlistId } = req.params;
+    const { symbol, companyName, addedPrice, notes } = req.body;
+    
+    if (!symbol) {
+      return res.status(400).json({ error: 'Symbol is required' });
+    }
+
+    const stockId = await userManager.addStockToWatchlist(
+      parseInt(watchlistId), 
+      symbol, 
+      companyName, 
+      addedPrice, 
+      notes
+    );
+    
+    res.json({ success: true, stockId, message: 'Stock added to watchlist successfully' });
+  } catch (error) {
+    console.error('Add stock to watchlist error:', error);
+    res.status(500).json({ error: 'Failed to add stock to watchlist' });
+  }
+});
+
+app.delete('/api/watchlists/:watchlistId/stocks/:symbol', authRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Watchlist features are not available. Database not initialized.' });
+  }
+
+  try {
+    const { watchlistId, symbol } = req.params;
+    const success = await userManager.removeStockFromWatchlist(parseInt(watchlistId), symbol);
+    
+    if (success) {
+      res.json({ success: true, message: 'Stock removed from watchlist successfully' });
+    } else {
+      res.status(404).json({ error: 'Stock not found in watchlist' });
+    }
+  } catch (error) {
+    console.error('Remove stock from watchlist error:', error);
+    res.status(500).json({ error: 'Failed to remove stock from watchlist' });
+  }
+});
+
+app.put('/api/watchlists/:watchlistId/stocks/:symbol', authRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Watchlist features are not available. Database not initialized.' });
+  }
+
+  try {
+    const { watchlistId, symbol } = req.params;
+    const updates = req.body;
+    
+    const success = await userManager.updateWatchlistStock(parseInt(watchlistId), symbol, updates);
+    
+    if (success) {
+      res.json({ success: true, message: 'Stock updated successfully' });
+    } else {
+      res.status(404).json({ error: 'Stock not found in watchlist' });
+    }
+  } catch (error) {
+    console.error('Update watchlist stock error:', error);
+    res.status(500).json({ error: 'Failed to update stock' });
+  }
+});
+
+app.delete('/api/watchlists/:watchlistId', authRequired, async (req, res) => {
+  if (!userManager) {
+    return res.status(503).json({ error: 'Watchlist features are not available. Database not initialized.' });
+  }
+
+  try {
+    const { watchlistId } = req.params;
+    const success = await userManager.deleteWatchlist(parseInt(watchlistId));
+    
+    if (success) {
+      res.json({ success: true, message: 'Watchlist deleted successfully' });
+    } else {
+      res.status(404).json({ error: 'Watchlist not found' });
+    }
+  } catch (error) {
+    console.error('Delete watchlist error:', error);
+    res.status(500).json({ error: 'Failed to delete watchlist' });
+  }
+});
+
 // Protect direct access to index.html
 app.get('/index.html', authRequired, (req, res) => {
   res.sendFile('index.html', { root: 'public' });

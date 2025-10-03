@@ -123,6 +123,138 @@
             text-align: center;
             padding: 20px;
         }
+        
+        /* Watchlist Panel Styles */
+        .watchlist-panel {
+            background: #0b1220;
+            border: 1px solid #1f2937;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            min-height: 400px;
+        }
+        
+        .watchlist-tabs {
+            margin-bottom: 15px;
+        }
+        
+        .watchlist-tab-list {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .watchlist-tab {
+            padding: 8px 12px;
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            color: #94a3b8;
+            transition: all 0.2s;
+        }
+        
+        .watchlist-tab.active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: white;
+        }
+        
+        .watchlist-tab:hover {
+            background: #374151;
+        }
+        
+        .watchlist-content {
+            min-height: 300px;
+        }
+        
+        .watchlist-stocks {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .stock-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: #0a0e1a;
+            border: 1px solid #1f2937;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        
+        .stock-item:hover {
+            border-color: #3b82f6;
+        }
+        
+        .stock-info {
+            flex: 1;
+        }
+        
+        .stock-symbol {
+            font-weight: 600;
+            color: #3b82f6;
+            font-size: 14px;
+        }
+        
+        .stock-name {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+        
+        .stock-price {
+            font-size: 12px;
+            color: #10b981;
+            margin-top: 2px;
+        }
+        
+        .stock-actions {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .stock-actions .btn {
+            padding: 4px 8px;
+            font-size: 10px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #94a3b8;
+        }
+        
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        
+        .empty-state p {
+            margin: 8px 0;
+        }
+        
+        .help-text {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+        
+        .watchlist-actions {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #1f2937;
+            text-align: center;
+        }
+        
+        /* Add to Watchlist Button */
+        .add-to-watchlist-btn {
+            margin-top: 10px;
+            width: 100%;
+        }
     </style>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -202,6 +334,38 @@
                     </div>
 
                     <div class="grid-layout">
+                        <!-- Watchlist Panel -->
+                        <div class="watchlist-panel">
+                            <div class="panel-header">
+                                <h2><i class="fas fa-eye"></i> 我的模擬倉</h2>
+                                <button id="createWatchlistBtn" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-plus"></i> 新建
+                                </button>
+                            </div>
+                            
+                            <div class="watchlist-tabs">
+                                <div id="watchlistTabs" class="watchlist-tab-list">
+                                    <!-- Watchlist tabs will be populated here -->
+                                </div>
+                            </div>
+                            
+                            <div id="watchlistContent" class="watchlist-content">
+                                <div class="watchlist-stocks">
+                                    <div class="empty-state">
+                                        <i class="fas fa-chart-line"></i>
+                                        <p>還沒有股票在模擬倉中</p>
+                                        <p class="help-text">搜索股票後點擊"加入模擬倉"按鈕</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="watchlist-actions">
+                                <button id="refreshWatchlistBtn" class="btn btn-secondary btn-sm">
+                                    <i class="fas fa-sync-alt"></i> 刷新
+                                </button>
+                            </div>
+                        </div>
+
                         <!-- Input Panel -->
                         <div class="input-panel">
                             <div class="panel-header">
@@ -291,6 +455,10 @@
                                     <i class="fas fa-chart-line"></i>
                                     <span class="btn-text">運行回測分析</span>
                                     <div class="btn-spinner" style="display: none;"></div>
+                                </button>
+                                <button id="addToWatchlistBtn" class="btn btn-warning add-to-watchlist-btn" aria-label="Add to watchlist" style="display: none;">
+                                    <i class="fas fa-eye"></i>
+                                    <span class="btn-text">加入模擬倉</span>
                                 </button>
                             </div>
                         </div>
