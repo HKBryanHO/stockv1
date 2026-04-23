@@ -1,9 +1,0 @@
-node_modules/
-.env
-*.env
-ATT22978.env
-server_run.log
-*.log
-.DS_Store
-dist/
-build/

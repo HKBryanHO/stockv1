@@ -1,0 +1,20 @@
+{
+  "site": {
+    "title": "Asher Boy 日記",
+    "subtitle": "寫俾自己的話",
+    "author": "Asher",
+    "password_hash": "8daea142f8d43b9872204e9227799553577409b40765f71c9e252ef4c39d90ca"
+  },
+  "entries": [
+    {
+      "id": "2026-04-23-welcome",
+      "date": "2026-04-23",
+      "title": "第一頁",
+      "preview": "每個人都需要一個地方，可以不加修飾地說話。呢個地方，係我既。",
+      "tags": ["開始", "想法"],
+      "private": false,
+      "photos": [],
+      "file": "data/2026-04-23-welcome.md"
+    }
+  ]
+}

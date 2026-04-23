@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Asher Boy 日記</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=Ma+Shan+Zheng&family=Lora:ital,wght@0,400;0,500;1,400&family=Noto+Serif+TC:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #faf6ef;
+    --paper:    #fff9f2;
+    --brown:    #2c1a0e;
+    --mid:      #7a5230;
+    --gold:     #c9953a;
+    --gold-lt:  #e8d09a;
+    --line:     #e0cdb3;
+    --shadow:   rgba(90,50,20,0.10);
+    --font-en:  'Caveat', cursive;
+    --font-zh:  'Ma Shan Zheng', 'Noto Serif TC', serif;
+    --font-body:'Lora', 'Noto Serif TC', serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 20% 50%, rgba(201,149,58,0.04) 0%, transparent 60%),
+      radial-gradient(circle at 80% 20%, rgba(201,149,58,0.03) 0%, transparent 50%);
+    color: var(--brown);
+    font-family: var(--font-body);
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    text-align: center;
+    padding: 60px 20px 40px;
+    position: relative;
+  }
+  .site-title {
+    font-family: var(--font-en);
+    font-size: clamp(3rem, 8vw, 5.5rem);
+    font-weight: 700;
+    color: var(--brown);
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+  .site-title span { color: var(--gold); }
+  .site-zh {
+    font-family: var(--font-zh);
+    font-size: clamp(1rem, 3vw, 1.4rem);
+    color: var(--mid);
+    margin-top: 6px;
+    letter-spacing: 4px;
+  }
+  .site-sub {
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    color: var(--mid);
+    margin-top: 12px;
+    font-style: italic;
+    opacity: 0.8;
+  }
+  .header-line {
+    width: 60px;
+    height: 2px;
+    background: var(--gold);
+    margin: 20px auto 0;
+    border-radius: 2px;
+  }
+
+  /* ── Nav ── */
+  nav {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 20px 40px;
+    flex-wrap: wrap;
+  }
+  nav a {
+    font-family: var(--font-en);
+    font-size: 1.05rem;
+    color: var(--mid);
+    text-decoration: none;
+    padding: 6px 18px;
+    border: 1.5px solid var(--line);
+    border-radius: 40px;
+    transition: all .2s;
+    background: var(--paper);
+  }
+  nav a:hover, nav a.active {
+    border-color: var(--gold);
+    color: var(--gold);
+    background: rgba(201,149,58,0.06);
+  }
+
+  /* ── Entry Grid ── */
+  .entries {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 0 20px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  /* ── Entry Card ── */
+  .card {
+    background: var(--paper);
+    border-radius: 4px;
+    box-shadow: 0 2px 12px var(--shadow), 0 0 0 1px var(--line);
+    padding: 32px 36px 28px;
+    position: relative;
+    cursor: pointer;
+    transition: transform .2s, box-shadow .2s;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--gold-lt);
+    border-radius: 4px 0 0 4px;
+    transition: background .2s;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px var(--shadow), 0 0 0 1px var(--line); }
+  .card:hover::before { background: var(--gold); }
+
+  /* ruled lines behind text */
+  .card .ruled {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image: repeating-linear-gradient(
+      transparent, transparent 31px, var(--line) 31px, var(--line) 32px
+    );
+    background-position: 0 52px;
+    opacity: 0.35;
+    pointer-events: none;
+  }
+
+  .card-date {
+    font-family: var(--font-en);
+    font-size: 0.85rem;
+    color: var(--mid);
+    margin-bottom: 8px;
+    opacity: 0.8;
+  }
+  .card-title {
+    font-family: var(--font-en);
+    font-size: clamp(1.4rem, 3vw, 1.9rem);
+    font-weight: 700;
+    color: var(--brown);
+    margin-bottom: 10px;
+    line-height: 1.2;
+  }
+  .card-preview {
+    font-size: 0.97rem;
+    color: var(--mid);
+    line-height: 1.75;
+    font-style: italic;
+  }
+  .card-tags {
+    margin-top: 16px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    font-family: var(--font-en);
+    font-size: 0.78rem;
+    color: var(--gold);
+    background: rgba(201,149,58,0.1);
+    padding: 2px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--gold-lt);
+  }
+  .card-photos-hint {
+    margin-top: 12px;
+    font-size: 0.82rem;
+    color: var(--mid);
+    opacity: 0.7;
+  }
+
+  /* locked card */
+  .card.locked .card-preview { filter: blur(4px); user-select: none; }
+  .lock-badge {
+    position: absolute;
+    top: 16px; right: 20px;
+    font-size: 1.1rem;
+    opacity: 0.5;
+  }
+
+  /* ── No entries ── */
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--mid);
+    font-style: italic;
+    opacity: 0.7;
+  }
+
+  /* ── Password Modal ── */
+  .modal-bg {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(44,26,14,0.55);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-bg.show { display: flex; }
+  .modal {
+    background: var(--paper);
+    border-radius: 8px;
+    padding: 40px 36px;
+    max-width: 360px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(44,26,14,0.3);
+    text-align: center;
+    border: 1px solid var(--line);
+  }
+  .modal h3 {
+    font-family: var(--font-en);
+    font-size: 1.6rem;
+    margin-bottom: 8px;
+  }
+  .modal p { font-size: 0.9rem; color: var(--mid); margin-bottom: 24px; font-style: italic; }
+  .modal input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1.5px solid var(--line);
+    border-radius: 6px;
+    font-family: var(--font-body);
+    font-size: 1rem;
+    background: var(--bg);
+    color: var(--brown);
+    text-align: center;
+    letter-spacing: 3px;
+    outline: none;
+    transition: border .2s;
+  }
+  .modal input:focus { border-color: var(--gold); }
+  .modal-btns { display: flex; gap: 10px; margin-top: 16px; }
+  .btn {
+    flex: 1;
+    padding: 11px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-family: var(--font-en);
+    font-size: 1rem;
+    font-weight: 600;
+    transition: all .2s;
+  }
+  .btn-primary { background: var(--gold); color: #fff; }
+  .btn-primary:hover { background: #b8842e; }
+  .btn-ghost { background: transparent; border: 1.5px solid var(--line); color: var(--mid); }
+  .btn-ghost:hover { border-color: var(--mid); }
+  .modal-err { color: #c0392b; font-size: 0.85rem; margin-top: 10px; display: none; }
+
+  /* ── Entry View (slide-in panel) ── */
+  .entry-panel {
+    display: none;
+    position: fixed; inset: 0;
+    z-index: 90;
+    overflow-y: auto;
+    background: var(--bg);
+    padding: 40px 20px 80px;
+    animation: slideUp .3s ease;
+  }
+  .entry-panel.show { display: block; }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .entry-inner {
+    max-width: 680px;
+    margin: 0 auto;
+    background: var(--paper);
+    border-radius: 4px;
+    box-shadow: 0 4px 24px var(--shadow);
+    padding: 48px 52px;
+    border: 1px solid var(--line);
+    position: relative;
+  }
+  .entry-inner .ruled {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background-image: repeating-linear-gradient(
+      transparent, transparent 31px, var(--line) 31px, var(--line) 32px
+    );
+    background-position: 0 80px;
+    opacity: 0.3;
+    pointer-events: none;
+  }
+  .back-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--font-en); font-size: 0.95rem;
+    color: var(--mid); cursor: pointer; border: none; background: none;
+    padding: 0; margin-bottom: 32px;
+    transition: color .2s;
+  }
+  .back-btn:hover { color: var(--gold); }
+  .entry-date { font-family: var(--font-en); font-size: 0.9rem; color: var(--mid); margin-bottom: 12px; }
+  .entry-title {
+    font-family: var(--font-en);
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: 700; line-height: 1.1;
+    margin-bottom: 32px;
+    color: var(--brown);
+  }
+  .entry-body {
+    font-size: 1.05rem;
+    line-height: 2;
+    color: var(--brown);
+  }
+  .entry-body h1,.entry-body h2,.entry-body h3 {
+    font-family: var(--font-en); margin: 28px 0 10px; color: var(--brown);
+  }
+  .entry-body p { margin-bottom: 16px; }
+  .entry-body em { color: var(--mid); font-style: italic; }
+  .entry-body hr { border: none; border-top: 1px solid var(--line); margin: 28px 0; }
+  .entry-body blockquote {
+    border-left: 3px solid var(--gold);
+    padding-left: 16px;
+    color: var(--mid);
+    font-style: italic;
+    margin: 20px 0;
+  }
+  .entry-photos { margin-top: 32px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 12px; }
+  .entry-photos img { width: 100%; border-radius: 4px; object-fit: cover; aspect-ratio: 4/3; box-shadow: 0 2px 8px var(--shadow); }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    padding: 40px 20px;
+    font-family: var(--font-en);
+    font-size: 0.85rem;
+    color: var(--mid);
+    opacity: 0.6;
+    border-top: 1px solid var(--line);
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    .card { padding: 24px 22px 20px; }
+    .entry-inner { padding: 32px 24px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="site-title">Asher<span>Boy</span></div>
+  <div class="site-zh">日 &nbsp;記</div>
+  <div class="site-sub">寫俾自己的話</div>
+  <div class="header-line"></div>
+</header>
+
+<nav>
+  <a href="index.html" class="active">📖 日記</a>
+  <a href="gallery.html">📷 相片</a>
+</nav>
+
+<main class="entries" id="entries-list">
+  <div class="empty">載入中...</div>
+</main>
+
+<!-- Entry panel -->
+<div class="entry-panel" id="entry-panel">
+  <div class="entry-inner">
+    <div class="ruled"></div>
+    <button class="back-btn" onclick="closeEntry()">← 返回</button>
+    <div class="entry-date" id="ep-date"></div>
+    <div class="entry-title" id="ep-title"></div>
+    <div class="entry-body" id="ep-body"></div>
+    <div class="entry-photos" id="ep-photos"></div>
+  </div>
+</div>
+
+<!-- Password modal -->
+<div class="modal-bg" id="pw-modal">
+  <div class="modal">
+    <h3>🔒 私人日記</h3>
+    <p>呢篇日記係私人的，請輸入密碼繼續。</p>
+    <input type="password" id="pw-input" placeholder="密碼" onkeydown="if(event.key==='Enter')checkPw()">
+    <div id="pw-err" class="modal-err">密碼錯誤，請再試。</div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closePwModal()">取消</button>
+      <button class="btn btn-primary" onclick="checkPw()">確認</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  bma-hk.com &nbsp;·&nbsp; Asher Boy &nbsp;·&nbsp; Hong Kong
+</footer>
+
+<!-- marked.js for markdown -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+// ── Config ──────────────────────────────────────────────────
+let SITE_DATA   = null;
+let pendingEntry = null;
+let unlockedThisSession = false;
+
+// ── SHA-256 (native Web Crypto) ───────────────────────────
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+// ── Format date ───────────────────────────────────────────
+function fmtDate(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('zh-HK', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
+}
+
+// ── Load entries.json ─────────────────────────────────────
+async function loadEntries() {
+  try {
+    const r = await fetch('data/entries.json?t=' + Date.now());
+    SITE_DATA = await r.json();
+    renderList();
+  } catch(e) {
+    document.getElementById('entries-list').innerHTML =
+      '<div class="empty">載入失敗，請稍後再試。</div>';
+  }
+}
+
+// ── Render entry list ─────────────────────────────────────
+function renderList() {
+  const container = document.getElementById('entries-list');
+  const entries   = SITE_DATA.entries || [];
+  if (!entries.length) {
+    container.innerHTML = '<div class="empty">日記仲係空嘅，第一篇快啲來吧。</div>';
+    return;
+  }
+
+  // Sort newest first
+  const sorted = [...entries].sort((a,b) => b.date.localeCompare(a.date));
+
+  container.innerHTML = sorted.map(e => {
+    const locked  = e.private && !unlockedThisSession;
+    const tagsHtml = (e.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('');
+    const photosHint = e.photos?.length ? `<div class="card-photos-hint">📷 ${e.photos.length} 張相片</div>` : '';
+    const lockBadge  = e.private ? '<div class="lock-badge">🔒</div>' : '';
+    return `
+      <article class="card ${locked?'locked':''}" onclick="openEntry('${e.id}')">
+        <div class="ruled"></div>
+        ${lockBadge}
+        <div class="card-date">${fmtDate(e.date)}</div>
+        <div class="card-title">${e.title}</div>
+        <div class="card-preview">${e.preview}</div>
+        ${tagsHtml ? `<div class="card-tags">${tagsHtml}</div>` : ''}
+        ${photosHint}
+      </article>`;
+  }).join('');
+}
+
+// ── Open entry ────────────────────────────────────────────
+async function openEntry(id) {
+  const entry = SITE_DATA.entries.find(e=>e.id===id);
+  if (!entry) return;
+
+  if (entry.private && !unlockedThisSession) {
+    pendingEntry = id;
+    document.getElementById('pw-modal').classList.add('show');
+    document.getElementById('pw-input').value = '';
+    document.getElementById('pw-err').style.display = 'none';
+    setTimeout(()=>document.getElementById('pw-input').focus(), 100);
+    return;
+  }
+  await showEntry(entry);
+}
+
+async function showEntry(entry) {
+  // Load markdown content
+  let md = '';
+  try {
+    const r = await fetch(entry.file + '?t=' + Date.now());
+    md = await r.text();
+  } catch(e) { md = entry.preview; }
+
+  document.getElementById('ep-date').textContent  = fmtDate(entry.date);
+  document.getElementById('ep-title').textContent = entry.title;
+  document.getElementById('ep-body').innerHTML    = marked.parse(md);
+
+  // Photos
+  const ph = document.getElementById('ep-photos');
+  ph.innerHTML = (entry.photos||[]).map(p=>`<img src="${p}" loading="lazy" alt="photo">`).join('');
+
+  document.getElementById('entry-panel').classList.add('show');
+  document.documentElement.style.overflow = 'hidden';
+  window.scrollTo(0,0);
+}
+
+function closeEntry() {
+  document.getElementById('entry-panel').classList.remove('show');
+  document.documentElement.style.overflow = '';
+}
+
+// ── Password ──────────────────────────────────────────────
+async function checkPw() {
+  const val  = document.getElementById('pw-input').value;
+  const hash = await sha256(val);
+  if (hash === SITE_DATA.site.password_hash) {
+    unlockedThisSession = true;
+    closePwModal();
+    renderList();
+    if (pendingEntry) {
+      const entry = SITE_DATA.entries.find(e=>e.id===pendingEntry);
+      if (entry) await showEntry(entry);
+      pendingEntry = null;
+    }
+  } else {
+    document.getElementById('pw-err').style.display = 'block';
+    document.getElementById('pw-input').select();
+  }
+}
+
+function closePwModal() {
+  document.getElementById('pw-modal').classList.remove('show');
+  pendingEntry = null;
+}
+
+// Close modal on bg click
+document.getElementById('pw-modal').addEventListener('click', function(e) {
+  if (e.target === this) closePwModal();
+});
+
+// Keyboard escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeEntry(); closePwModal(); }
+});
+
+// ── Init ──────────────────────────────────────────────────
+loadEntries();
+</script>
+</body>
+</html>

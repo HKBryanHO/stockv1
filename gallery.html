@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>相片 · Asher Boy 日記</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=Lora:ital,wght@0,400;1,400&family=Noto+Serif+TC:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#faf6ef;--paper:#fff9f2;--brown:#2c1a0e;--mid:#7a5230;
+    --gold:#c9953a;--gold-lt:#e8d09a;--line:#e0cdb3;--shadow:rgba(90,50,20,0.10);
+    --font-en:'Caveat',cursive;--font-body:'Lora','Noto Serif TC',serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--brown);font-family:var(--font-body);min-height:100vh}
+  header{text-align:center;padding:60px 20px 40px}
+  .site-title{font-family:var(--font-en);font-size:clamp(3rem,8vw,5.5rem);font-weight:700;letter-spacing:-1px}
+  .site-title span{color:var(--gold)}
+  .site-sub{font-family:var(--font-body);font-size:.9rem;color:var(--mid);margin-top:12px;font-style:italic;opacity:.8}
+  .header-line{width:60px;height:2px;background:var(--gold);margin:20px auto 0;border-radius:2px}
+  nav{display:flex;justify-content:center;gap:8px;padding:0 20px 40px;flex-wrap:wrap}
+  nav a{font-family:var(--font-en);font-size:1.05rem;color:var(--mid);text-decoration:none;padding:6px 18px;
+    border:1.5px solid var(--line);border-radius:40px;transition:all .2s;background:var(--paper)}
+  nav a:hover,nav a.active{border-color:var(--gold);color:var(--gold);background:rgba(201,149,58,.06)}
+  .gallery-grid{max-width:1000px;margin:0 auto;padding:0 20px 80px;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+  .photo-card{background:var(--paper);border-radius:4px;overflow:hidden;cursor:pointer;
+    box-shadow:0 2px 12px var(--shadow),0 0 0 1px var(--line);transition:transform .2s,box-shadow .2s}
+  .photo-card:hover{transform:translateY(-3px);box-shadow:0 8px 28px var(--shadow)}
+  .photo-card img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
+  .photo-meta{padding:12px 16px}
+  .photo-meta .date{font-family:var(--font-en);font-size:.82rem;color:var(--mid);opacity:.8}
+  .photo-meta .caption{font-size:.93rem;color:var(--brown);margin-top:4px;font-style:italic}
+  .empty{text-align:center;padding:80px 20px;color:var(--mid);font-style:italic;opacity:.7;grid-column:1/-1}
+  /* Lightbox */
+  .lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:200;
+    align-items:center;justify-content:center;flex-direction:column;padding:20px}
+  .lb.show{display:flex}
+  .lb img{max-height:80vh;max-width:90vw;border-radius:4px;box-shadow:0 0 60px rgba(0,0,0,.5)}
+  .lb-caption{color:#e8d09a;font-family:var(--font-body);font-style:italic;margin-top:16px;font-size:.95rem}
+  .lb-close{position:absolute;top:20px;right:24px;color:#fff;font-size:2rem;cursor:pointer;opacity:.7;border:none;background:none}
+  .lb-close:hover{opacity:1}
+  footer{text-align:center;padding:40px 20px;font-family:var(--font-en);font-size:.85rem;color:var(--mid);opacity:.6;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header>
+  <div class="site-title">Asher<span>Boy</span></div>
+  <div class="site-sub">寫俾自己的話</div>
+  <div class="header-line"></div>
+</header>
+<nav>
+  <a href="index.html">📖 日記</a>
+  <a href="gallery.html" class="active">📷 相片</a>
+</nav>
+
+<div class="gallery-grid" id="gallery"></div>
+
+<!-- Lightbox -->
+<div class="lb" id="lb" onclick="if(event.target===this)closeLb()">
+  <button class="lb-close" onclick="closeLb()">✕</button>
+  <img id="lb-img" src="" alt="">
+  <div class="lb-caption" id="lb-cap"></div>
+</div>
+
+<footer>bma-hk.com &nbsp;·&nbsp; Asher Boy &nbsp;·&nbsp; Hong Kong</footer>
+
+<script>
+async function loadGallery() {
+  const grid = document.getElementById('gallery');
+  try {
+    const r    = await fetch('data/entries.json?t=' + Date.now());
+    const data = await r.json();
+    const photos = [];
+    (data.entries || []).forEach(e => {
+      (e.photos || []).forEach(p => photos.push({ src: p, date: e.date, caption: e.title }));
+    });
+    if (!photos.length) {
+      grid.innerHTML = '<div class="empty">相片集仲係空嘅。</div>';
+      return;
+    }
+    grid.innerHTML = photos.map((p,i) => `
+      <div class="photo-card" onclick="openLb('${p.src}','${p.caption}')">
+        <img src="${p.src}" loading="lazy" alt="${p.caption}">
+        <div class="photo-meta">
+          <div class="date">${p.date}</div>
+          <div class="caption">${p.caption}</div>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    grid.innerHTML = '<div class="empty">載入失敗。</div>';
+  }
+}
+
+function openLb(src, cap) {
+  document.getElementById('lb-img').src = src;
+  document.getElementById('lb-cap').textContent = cap;
+  document.getElementById('lb').classList.add('show');
+}
+function closeLb() { document.getElementById('lb').classList.remove('show'); }
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeLb(); });
+
+loadGallery();
+</script>
+</body>
+</html>
